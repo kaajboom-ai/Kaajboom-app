@@ -173,16 +173,6 @@ function JalaliMonthInput(props) {
     h("select", { style: { ...inputStyle, width: 72 }, value: jy, onChange: (e) => onChange(Number(e.target.value) + "-" + jm) }, yearOpts.map((y) => h("option", { key: y, value: y }, y)))
   );
 }
-function jalaliToGregorian(jy, jm, jd) {
-  const guess = new Date(jy + 621, 0, 1);
-  guess.setDate(guess.getDate() - 100);
-  for (let i = 0; i < 800; i++) {
-    const g = gregorianToJalali(guess.getFullYear(), guess.getMonth() + 1, guess.getDate());
-    if (g[0] === jy && g[1] === jm && g[2] === jd) return new Date(guess.getFullYear(), guess.getMonth(), guess.getDate());
-    guess.setDate(guess.getDate() + 1);
-  }
-  return new Date(jy + 621, jm - 1, jd);
-}
 function strHash(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return Math.abs(h); }
 const STAY_COLORS = ["#B65C38", "#6B7A57", "#8E2A3B", "#2B3560", "#C9A227", "#8FA073", "#4E6E8E", "#A6673D"];
 function colorForStay(stayId) { return STAY_COLORS[strHash(stayId) % STAY_COLORS.length]; }
