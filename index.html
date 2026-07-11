@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>کاج‌بوم - مدیریت اقامتگاه</title>
+<title>کاج‌بوم - خانه فرهنگ و هنر نایین</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
@@ -124,7 +124,7 @@ function jalaliMonthKeyFromDate(dateISO) {
   return { key: j[0] + "-" + j[1], label: MONTHS[j[1] - 1] + " " + j[0] };
 }
 function JalaliDateInput(props) {
-  const value = props.value, onChange = props.onChange;
+  const value = props.value, onChange = props.onChange, label = props.label;
   const now = new Date();
   const curJY = gregorianToJalali(now.getFullYear(), now.getMonth() + 1, now.getDate())[0];
   let jy = curJY, jm = 1, jd = 1;
@@ -137,10 +137,13 @@ function JalaliDateInput(props) {
   };
   const dayOpts = []; for (let i = 1; i <= dim; i++) dayOpts.push(i);
   const yearOpts = [curJY - 1, curJY, curJY + 1, curJY + 2];
-  return h("div", { style: { display: "flex", gap: 4 } },
-    h("select", { style: { ...inputStyle, width: 58 }, value: jd, onChange: (e) => emit(jy, jm, Number(e.target.value)) }, dayOpts.map((d) => h("option", { key: d, value: d }, d))),
-    h("select", { style: { ...inputStyle, width: 85 }, value: jm, onChange: (e) => emit(jy, Number(e.target.value), jd) }, MONTHS.map((m, i) => h("option", { key: m, value: i + 1 }, m))),
-    h("select", { style: { ...inputStyle, width: 72 }, value: jy, onChange: (e) => emit(Number(e.target.value), jm, jd) }, yearOpts.map((y) => h("option", { key: y, value: y }, y)))
+  return h("div", null,
+    label ? h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, label) : null,
+    h("div", { style: { display: "flex", gap: 4 } },
+      h("select", { style: { ...inputStyle, width: 58 }, value: jd, onChange: (e) => emit(jy, jm, Number(e.target.value)) }, dayOpts.map((d) => h("option", { key: d, value: d }, d))),
+      h("select", { style: { ...inputStyle, width: 85 }, value: jm, onChange: (e) => emit(jy, Number(e.target.value), jd) }, MONTHS.map((m, i) => h("option", { key: m, value: i + 1 }, m))),
+      h("select", { style: { ...inputStyle, width: 72 }, value: jy, onChange: (e) => emit(Number(e.target.value), jm, jd) }, yearOpts.map((y) => h("option", { key: y, value: y }, y)))
+    )
   );
 }
 function JalaliMonthInput(props) {
@@ -172,16 +175,15 @@ function todayISO() { return isoLocal(new Date()); }
 
 
 async function callAIAPI(apiKey, prompt) {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + encodeURIComponent(apiKey), {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: prompt }] })
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message || "خطای API");
-  const cand = (data.candidates || [])[0];
-  const parts = cand && cand.content && cand.content.parts ? cand.content.parts : [];
-  return parts.map((p) => p.text || "").join("\n");
+  const choice = (data.choices || [])[0];
+  return choice && choice.message ? (choice.message.content || "") : "";
 }
 
 function AIKeyBox(props) {
@@ -191,10 +193,10 @@ function AIKeyBox(props) {
   const save = () => { setSettings({ apiKey: draft.trim() }); setOpen(false); };
   if (!open) return h("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 10, cursor: "pointer" }, onClick: () => setOpen(true) }, "🔑 کلید API تنظیم شده — برای تغییر بزنید");
   return h(Niche, { style: { marginBottom: 14 } },
-    h(SectionTitle, { eyebrow: "تنظیمات هوش مصنوعی", title: "کلید API (Google Gemini — رایگان)" }),
-    h("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 6 } }, "این کلید فقط روی همین دستگاه‌ها ذخیره می‌شود؛ لینک اپ را با کسی جز هاجر به اشتراک نگذارید. کلید رایگان را از aistudio.google.com بگیرید."),
+    h(SectionTitle, { eyebrow: "تنظیمات هوش مصنوعی", title: "کلید API (Groq — رایگان)" }),
+    h("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 6 } }, "این کلید فقط روی همین دستگاه‌ها ذخیره می‌شود؛ لینک اپ را با کسی جز هاجر به اشتراک نگذارید. کلید رایگان را از console.groq.com بگیرید."),
     h("div", { style: { display: "flex", gap: 6 } },
-      h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "AIza...", value: draft, onChange: (e) => setDraft(e.target.value) }),
+      h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "gsk_...", value: draft, onChange: (e) => setDraft(e.target.value) }),
       h("button", { style: btnStyle, onClick: save }, "ذخیره")
     )
   );
@@ -262,37 +264,6 @@ function Pill(props) {
 const inputStyle = { fontSize: 12.5, padding: "7px 9px", borderRadius: 8, border: "1px solid " + C.sandDark, background: "#fff", color: C.ink };
 const btnStyle = { fontSize: 12.5, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", background: C.clay, color: "#fff", cursor: "pointer" };
 const btnCircle = { width: 24, height: 24, borderRadius: "50%", border: "none", background: C.clay, color: "#fff", cursor: "pointer" };
-
-function JalaliDateInput(props) {
-  const value = props.value, onChange = props.onChange, label = props.label;
-  const parsed = value ? gregorianToJalali(new Date(value + "T00:00:00").getFullYear(), new Date(value + "T00:00:00").getMonth() + 1, new Date(value + "T00:00:00").getDate()) : null;
-  const todayJ = gregorianToJalali(new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate());
-  const [day, setDay] = useState(parsed ? String(parsed[2]) : "");
-  const [month, setMonth] = useState(parsed ? String(parsed[1]) : "");
-  const [year, setYear] = useState(parsed ? String(parsed[0]) : String(todayJ[0]));
-
-  useEffect(() => {
-    const dNum = Number(day), mNum = Number(month), yNum = Number(year);
-    if (dNum >= 1 && dNum <= 31 && mNum >= 1 && mNum <= 12 && yNum >= 1300) {
-      const g = jalaliToGregorian(yNum, mNum, dNum);
-      const iso = isoLocal(g);
-      if (iso !== value) onChange(iso);
-    }
-    // eslint-disable-next-line
-  }, [day, month, year]);
-
-  return h("div", null,
-    label ? h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, label) : null,
-    h("div", { style: { display: "flex", gap: 3 } },
-      h("input", { style: { ...inputStyle, width: 44 }, placeholder: "روز", value: day, onChange: (e) => setDay(e.target.value) }),
-      h("select", { style: { ...inputStyle, width: 78 }, value: month, onChange: (e) => setMonth(e.target.value) },
-        h("option", { value: "" }, "ماه"),
-        MONTHS.map((m, i) => h("option", { key: m, value: i + 1 }, m))
-      ),
-      h("input", { style: { ...inputStyle, width: 56 }, placeholder: "سال", value: year, onChange: (e) => setYear(e.target.value) })
-    )
-  );
-}
 
 function MiniChart(props) {
   const data = props.data, keys = props.keys, colors = props.colors, type = props.type || "bar", height = props.height || 200;
@@ -381,7 +352,7 @@ function App() {
   const ev = useDoc("events", DEFAULT_EVENTS); const events = ev[0], setEvents = ev[1], evL = ev[2];
   const gu = useDoc("guests", []); const guests = gu[0], setGuests = gu[1], guL = gu[2];
   const st = useDoc("settings", { apiKey: "" }); const settings = st[0], setSettings = st[1], stL = st[2];
-  const gr = useDoc("growth", { suggestions: [] }); const growth = gr[0], setGrowth = gr[1], grL = gr[2];
+  const gr = useDoc("growth", { books: [] }); const growth = gr[0], setGrowth = gr[1], grL = gr[2];
   const ac = useDoc("accounts", DEFAULT_ACCOUNTS); const accounts = ac[0], setAccounts = ac[1], accL = ac[2];
 
   const addFinanceEntry = (e) => setFinance((f) => f.concat([Object.assign({}, e, { id: uid() })]));
@@ -463,7 +434,7 @@ function App() {
   return h("div", { dir: "rtl", style: { background: C.sand, minHeight: "100vh", display: "flex" } },
     h("div", { style: { width: 170, flexShrink: 0, background: C.night, padding: "18px 10px", display: "flex", flexDirection: "column", gap: 3 } },
       h("div", { style: { color: C.gold, fontWeight: 700, fontSize: 15 } }, "کاج‌بوم"),
-      h("div", { style: { color: "#A9B0C9", fontSize: 10, marginBottom: 14 } }, "اقامتگاه سنتی نایین"),
+      h("div", { style: { color: "#A9B0C9", fontSize: 10, marginBottom: 14 } }, "خانه فرهنگ و هنر نایین"),
       TABS.map((t) => h("button", {
         key: t.key, onClick: () => setTab(t.key),
         style: { display: "flex", alignItems: "center", gap: 8, background: tab === t.key ? C.nightSoft : "transparent",
@@ -498,8 +469,8 @@ function App() {
       tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount }) : null,
       tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
       tab === "carbon" ? h(CarbonTab, { carbon: carbon, setCarbon: setCarbon, carbonSeries: carbonSeries }) : null,
-      tab === "events" ? h(EventsTab, { events: events, setEvents: setEvents, settings: settings, setSettings: setSettings }) : null,
-      tab === "growth" ? h(GrowthTab, { growth: growth, setGrowth: setGrowth, settings: settings, setSettings: setSettings }) : null
+      tab === "events" ? h(EventsTab, { events: events, setEvents: setEvents, accounts: accounts }) : null,
+      tab === "growth" ? h(GrowthTab, { growth: growth, setGrowth: setGrowth }) : null
     )
   );
 }
@@ -1111,107 +1082,176 @@ function CarbonTab(props) {
 }
 
 function EventsTab(props) {
-  const events = props.events, setEvents = props.setEvents, settings = props.settings, setSettings = props.setSettings;
-  const [loadingId, setLoadingId] = useState(null);
-  const [errId, setErrId] = useState(null);
-  const [newEv, setNewEv] = useState({ title: "", season: MONTHS[0], budget: "" });
-  const toggle = (id) => setEvents((evs) => evs.map((e) => e.id === id ? Object.assign({}, e, { status: e.status === "done" ? "planned" : "done" }) : e));
-  const removeEvent = (id) => setEvents((evs) => evs.filter((e) => e.id !== id));
-  const addEvent = () => { if (!newEv.title) return; setEvents((evs) => evs.concat([{ id: uid(), title: newEv.title, season: newEv.season, budget: Number(newEv.budget) || 0, status: "planned" }])); setNewEv({ title: "", season: MONTHS[0], budget: "" }); };
-  const total = events.reduce((s, e) => s + Number(e.budget || 0), 0);
-
-  const getSuggestion = async (ev) => {
-    if (!settings.apiKey) { setErrId(ev.id); return; }
-    setLoadingId(ev.id); setErrId(null);
-    try {
-      const prompt = "برای رویداد یک اقامتگاه سنتی بوم‌گردی در نایین (کویر ایران) با عنوان «" + ev.title + "» در فصل " + ev.season + "، سه پیشنهاد کوتاه و عملی (هرکدام یک خط، بدون شماره‌گذاری اضافه) برای برگزاری این رویداد بده. فقط به فارسی و خیلی خلاصه پاسخ بده.";
-      const text = await callAIAPI(settings.apiKey, prompt);
-      setEvents((evs) => evs.map((e) => e.id === ev.id ? Object.assign({}, e, { aiSuggestion: text }) : e));
-    } catch (err) {
-      setEvents((evs) => evs.map((e) => e.id === ev.id ? Object.assign({}, e, { aiSuggestion: "خطا: " + err.message }) : e));
-    } finally {
-      setLoadingId(null);
-    }
+  const events = props.events, setEvents = props.setEvents, accounts = props.accounts;
+  const [newEv, setNewEv] = useState({ title: "", season: MONTHS[0], budget: "", fundingSource: accounts[0] || "", sponsorName: "" });
+  const toggle = (id) => {
+    setEvents((evs) => evs.map((e) => {
+      if (e.id !== id) return e;
+      const goingDone = e.status !== "done";
+      return Object.assign({}, e, { status: goingDone ? "done" : "planned", heldDate: goingDone ? (e.heldDate || todayISO()) : e.heldDate });
+    }));
   };
+  const removeEvent = (id) => setEvents((evs) => evs.filter((e) => e.id !== id));
+  const updateEvent = (id, field, value) => setEvents((evs) => evs.map((e) => e.id === id ? Object.assign({}, e, { [field]: value }) : e));
+  const addEvent = () => {
+    if (!newEv.title) return;
+    setEvents((evs) => evs.concat([{
+      id: uid(), title: newEv.title, season: newEv.season, budget: Number(newEv.budget) || 0,
+      fundingSource: newEv.fundingSource, sponsorName: newEv.fundingSource === "اسپانسر" ? newEv.sponsorName : "",
+      status: "planned", report: "", achievement: "", problems: "", participants: "", heldDate: ""
+    }]));
+    setNewEv({ title: "", season: MONTHS[0], budget: "", fundingSource: accounts[0] || "", sponsorName: "" });
+  };
+  const total = events.reduce((s, e) => s + Number(e.budget || 0), 0);
+  const fundingOptions = accounts.concat(["اسپانسر"]);
 
-  return h(React.Fragment, null,
-    h(AIKeyBox, { settings: settings, setSettings: setSettings }),
-    h(Niche, null,
-      h(SectionTitle, { eyebrow: "تقویم سالانه", title: "۱۲ رویداد و بودجه" }),
-      events.map((ev) => h("div", { key: ev.id, style: { background: C.sand, borderRadius: 10, padding: "9px 12px", marginBottom: 6 } },
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-          h("div", null, h("div", { style: { fontWeight: 600, fontSize: 13 } }, ev.title), h("div", { style: { fontSize: 11, color: C.inkSoft } }, "فصل: " + ev.season + " — بودجه: " + ev.budget)),
-          h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
-            h("button", { onClick: () => toggle(ev.id), style: { border: "none", background: "none", cursor: "pointer" } }, h(Pill, { text: ev.status === "done" ? "برگزار شد" : "برنامه‌ریزی‌شده", tone: ev.status })),
-            h("button", { onClick: () => getSuggestion(ev), style: { ...btnStyle, padding: "5px 10px", fontSize: 11 }, disabled: loadingId === ev.id }, loadingId === ev.id ? "..." : "💡 پیشنهاد AI"),
-            h("button", { onClick: () => removeEvent(ev.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
-          )
+  const doneEvents = events.filter((e) => e.status === "done");
+  const byYear = {};
+  doneEvents.forEach((e) => {
+    const y = e.heldDate ? gregorianToJalali(new Date(e.heldDate + "T00:00:00").getFullYear(), new Date(e.heldDate + "T00:00:00").getMonth() + 1, new Date(e.heldDate + "T00:00:00").getDate())[0] : "نامشخص";
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(e);
+  });
+  const years = Object.keys(byYear).sort().reverse();
+
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "تقویم سالانه", title: "۱۲ رویداد و بودجه" }),
+    events.map((ev) => h("div", { key: ev.id, style: { background: C.sand, borderRadius: 10, padding: "9px 12px", marginBottom: 6 } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+        h("div", null,
+          h("div", { style: { fontWeight: 600, fontSize: 13 } }, ev.title),
+          h("div", { style: { fontSize: 11, color: C.inkSoft } }, "فصل: " + ev.season + " — بودجه: " + ev.budget + " — از: " + (ev.fundingSource === "اسپانسر" ? ("اسپانسر (" + (ev.sponsorName || "بدون نام") + ")") : (ev.fundingSource || "-")))
         ),
-        errId === ev.id ? h("div", { style: { fontSize: 11, color: C.pomegranate, marginTop: 6 } }, "اول کلید API را بالای همین صفحه تنظیم کنید.") : null,
-        ev.aiSuggestion ? h("div", { style: { fontSize: 12, marginTop: 8, whiteSpace: "pre-line", background: "#fff", borderRadius: 8, padding: 8 } }, ev.aiSuggestion) : null
-      )),
-      h("div", { style: { fontWeight: 700, color: C.clay, marginTop: 8 } }, "جمع بودجه سالانه: " + total),
-      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 } },
-        h("input", { style: inputStyle, placeholder: "عنوان رویداد جدید", value: newEv.title, onChange: (e) => setNewEv(Object.assign({}, newEv, { title: e.target.value })) }),
-        h("select", { style: inputStyle, value: newEv.season, onChange: (e) => setNewEv(Object.assign({}, newEv, { season: e.target.value })) }, MONTHS.map((m) => h("option", { key: m }, m))),
-        h("input", { style: { ...inputStyle, width: 80 }, placeholder: "بودجه", value: newEv.budget, onChange: (e) => setNewEv(Object.assign({}, newEv, { budget: e.target.value })) }),
-        h("button", { style: btnStyle, onClick: addEvent }, "+")
-      )
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          h("button", { onClick: () => toggle(ev.id), style: { border: "none", background: "none", cursor: "pointer" } }, h(Pill, { text: ev.status === "done" ? "برگزار شد" : "برنامه‌ریزی‌شده", tone: ev.status })),
+          h("button", { onClick: () => removeEvent(ev.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+        )
+      ),
+      ev.status === "done" ? h("div", { style: { marginTop: 8 } },
+        h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 6 } },
+          h(JalaliDateInput, { label: "تاریخ برگزاری", value: ev.heldDate || todayISO(), onChange: (iso) => updateEvent(ev.id, "heldDate", iso) }),
+          h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "تعداد شرکت‌کننده"), h("input", { style: { ...inputStyle, width: 80 }, value: ev.participants || "", onChange: (e) => updateEvent(ev.id, "participants", e.target.value) }))
+        ),
+        h("textarea", { style: { ...inputStyle, width: "100%", minHeight: 40, fontFamily: "inherit" }, placeholder: "گزارش رویداد — چه گذشت؟", value: ev.report || "", onChange: (e) => updateEvent(ev.id, "report", e.target.value) }),
+        h("textarea", { style: { ...inputStyle, width: "100%", minHeight: 40, fontFamily: "inherit", marginTop: 6 }, placeholder: "دستاورد این رویداد چه بود؟", value: ev.achievement || "", onChange: (e) => updateEvent(ev.id, "achievement", e.target.value) }),
+        h("textarea", { style: { ...inputStyle, width: "100%", minHeight: 40, fontFamily: "inherit", marginTop: 6 }, placeholder: "مشکلات و نکات برای دفعهٔ بعد", value: ev.problems || "", onChange: (e) => updateEvent(ev.id, "problems", e.target.value) })
+      ) : null
+    )),
+    h("div", { style: { fontWeight: 700, color: C.clay, marginTop: 8 } }, "جمع بودجه سالانه: " + total),
+    h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 } },
+      h("input", { style: inputStyle, placeholder: "عنوان رویداد جدید", value: newEv.title, onChange: (e) => setNewEv(Object.assign({}, newEv, { title: e.target.value })) }),
+      h("select", { style: inputStyle, value: newEv.season, onChange: (e) => setNewEv(Object.assign({}, newEv, { season: e.target.value })) }, MONTHS.map((m) => h("option", { key: m }, m))),
+      h("input", { style: { ...inputStyle, width: 80 }, placeholder: "بودجه", value: newEv.budget, onChange: (e) => setNewEv(Object.assign({}, newEv, { budget: e.target.value })) }),
+      h("select", { style: inputStyle, value: newEv.fundingSource, onChange: (e) => setNewEv(Object.assign({}, newEv, { fundingSource: e.target.value })) }, fundingOptions.map((a) => h("option", { key: a }, a))),
+      newEv.fundingSource === "اسپانسر" ? h("input", { style: inputStyle, placeholder: "نام اسپانسر", value: newEv.sponsorName, onChange: (e) => setNewEv(Object.assign({}, newEv, { sponsorName: e.target.value })) }) : null,
+      h("button", { style: btnStyle, onClick: addEvent }, "+")
+    ),
+
+    h("div", { style: { marginTop: 22 } },
+      h(SectionTitle, { eyebrow: "جمع‌بندی", title: "گزارش سالانهٔ رویدادها" }),
+      years.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز رویدادی برگزار نشده.") : null,
+      years.map((y) => {
+        const list = byYear[y];
+        const partTotal = list.reduce((s, e) => s + (Number(e.participants) || 0), 0);
+        const costTotal = list.reduce((s, e) => s + (Number(e.budget) || 0), 0);
+        return h("div", { key: y, style: { background: C.sand, borderRadius: 10, padding: "10px 12px", marginBottom: 10 } },
+          h("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 6 } }, "سال " + y + " — " + list.length + " رویداد"),
+          h("div", { style: { fontSize: 12, marginBottom: 6 } }, "مجموع شرکت‌کننده: " + partTotal + " — مجموع هزینه: " + costTotal),
+          list.map((e) => h("div", { key: e.id, style: { fontSize: 11.5, background: "#fff", borderRadius: 8, padding: 8, marginBottom: 4 } },
+            h("div", { style: { fontWeight: 600 } }, e.title + " — " + (e.participants || 0) + " شرکت‌کننده — " + e.budget + " هزینه"),
+            e.achievement ? h("div", { style: { marginTop: 3, color: C.sage } }, "دستاورد: " + e.achievement) : null,
+            e.problems ? h("div", { style: { marginTop: 3, color: C.pomegranate } }, "مشکلات: " + e.problems) : null
+          ))
+        );
+      })
     )
   );
 }
 
 function GrowthTab(props) {
-  const growth = props.growth, setGrowth = props.setGrowth, settings = props.settings, setSettings = props.setSettings;
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const suggestions = growth.suggestions || [];
-  const weekKey = isoLocal(getSaturday(new Date()));
-  const alreadyThisWeek = suggestions.some((s) => s.weekKey === weekKey);
+  const growth = props.growth, setGrowth = props.setGrowth;
+  const books = growth.books || [];
+  const [newTitle, setNewTitle] = useState("");
+  const [reportDraft, setReportDraft] = useState({});
 
-  const getWeeklySuggestion = async () => {
-    if (!settings.apiKey) { setErr("اول کلید API را تنظیم کنید."); return; }
-    setLoading(true); setErr("");
-    try {
-      const prevTitles = suggestions.map((s) => s.title).join("، ") || "هیچ‌کدام";
-      const prompt = "برای صاحبان یک اقامتگاه سنتی بوم‌گردی در نایین (کویر ایران)، یک پیشنهاد فیلم و یک پیشنهاد کتاب مرتبط با فرهنگ، مهمان‌نوازی، کویر یا توسعهٔ فردی بده. این عناوین قبلاً پیشنهاد شده‌اند و نباید تکرار شوند: " + prevTitles + ". پاسخ را دقیقاً به این شکل و فقط دو خط بده:\nفیلم: <نام فیلم> - <یک جملهٔ کوتاه دلیل پیشنهاد>\nکتاب: <نام کتاب> - <یک جملهٔ کوتاه دلیل پیشنهاد>";
-      const text = await callAIAPI(settings.apiKey, prompt);
-      const lines = text.split("\n").filter((l) => l.trim());
-      const newItems = [];
-      lines.forEach((line) => {
-        if (line.indexOf("فیلم:") === 0 || line.indexOf("فیلم :") === 0) newItems.push({ id: uid(), type: "movie", title: line.replace(/^فیلم\s*:/, "").trim(), weekKey: weekKey, checked: false });
-        else if (line.indexOf("کتاب:") === 0 || line.indexOf("کتاب :") === 0) newItems.push({ id: uid(), type: "book", title: line.replace(/^کتاب\s*:/, "").trim(), weekKey: weekKey, checked: false });
-      });
-      if (!newItems.length) newItems.push({ id: uid(), type: "movie", title: text, weekKey: weekKey, checked: false });
-      setGrowth({ suggestions: suggestions.concat(newItems) });
-    } catch (e) {
-      setErr("خطا: " + e.message);
-    } finally {
-      setLoading(false);
-    }
+  const addBook = () => {
+    if (!newTitle.trim()) return;
+    setGrowth({ books: books.concat([{ id: uid(), title: newTitle.trim(), status: "reading", startDate: todayISO(), doneDate: "", report: "" }]) });
+    setNewTitle("");
   };
+  const markDone = (id) => {
+    const rep = reportDraft[id] || "";
+    setGrowth({ books: books.map((b) => b.id === id ? Object.assign({}, b, { status: "done", doneDate: todayISO(), report: rep }) : b) });
+    setReportDraft(Object.assign({}, reportDraft, { [id]: "" }));
+  };
+  const reopenBook = (id) => setGrowth({ books: books.map((b) => b.id === id ? Object.assign({}, b, { status: "reading" }) : b) });
+  const removeBook = (id) => setGrowth({ books: books.filter((b) => b.id !== id) });
 
-  const toggleCheck = (id) => setGrowth({ suggestions: suggestions.map((s) => s.id === id ? Object.assign({}, s, { checked: !s.checked }) : s) });
-  const checkedCount = suggestions.filter((s) => s.checked).length;
-  const pct = suggestions.length ? Math.round((checkedCount / suggestions.length) * 100) : 0;
+  const reading = books.filter((b) => b.status === "reading");
+  const done = books.filter((b) => b.status === "done");
 
-  return h(React.Fragment, null,
-    h(AIKeyBox, { settings: settings, setSettings: setSettings }),
-    h(Niche, null,
-      h(SectionTitle, { eyebrow: "آینه علاقه‌مندی‌ها", title: "پیشنهاد هفتگی فیلم و کتاب" }),
-      h("button", { style: btnStyle, onClick: getWeeklySuggestion, disabled: loading || alreadyThisWeek }, loading ? "..." : (alreadyThisWeek ? "این هفته قبلاً پیشنهاد گرفتی" : "پیشنهاد این هفته را بگیر") ),
-      err ? h("div", { style: { color: C.pomegranate, fontSize: 12, marginTop: 6 } }, err) : null,
-      suggestions.length ? h("div", { style: { marginTop: 12, fontSize: 12 } }, "میزان پیگیری: " + checkedCount + " از " + suggestions.length + " (" + pct + "٪)") : null,
-      h("div", { style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 8 } },
-        suggestions.slice().reverse().map((s) => h("label", { key: s.id, style: { display: "flex", alignItems: "center", gap: 8, background: C.sand, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, cursor: "pointer" } },
-          h("input", { type: "checkbox", checked: !!s.checked, onChange: () => toggleCheck(s.id) }),
-          h("span", null, (s.type === "movie" ? "🎬 " : "📖 ") + s.title),
-          s.checked ? h(Pill, { text: "دیده/خونده شد", tone: "done" }) : null
+  const byYear = {};
+  done.forEach((b) => {
+    if (!b.doneDate) return;
+    const y = gregorianToJalali(new Date(b.doneDate + "T00:00:00").getFullYear(), new Date(b.doneDate + "T00:00:00").getMonth() + 1, new Date(b.doneDate + "T00:00:00").getDate())[0];
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(b);
+  });
+  const years = Object.keys(byYear).sort().reverse();
+  const durations = done.filter((b) => b.startDate && b.doneDate).map((b) => Math.max(1, Math.round((new Date(b.doneDate + "T00:00:00") - new Date(b.startDate + "T00:00:00")) / 86400000)));
+  const avgDays = durations.length ? Math.round(durations.reduce((a, b2) => a + b2, 0) / durations.length) : null;
+
+  return h(Niche, null,
+    h(SectionTitle, { eyebrow: "کتابخوانی", title: "در حال خواندن" }),
+    reading.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "کتابی در حال خواندن نیست.") : null,
+    reading.map((b) => h("div", { key: b.id, style: { background: C.sand, borderRadius: 10, padding: "9px 12px", marginBottom: 8 } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+        h("div", null, h("div", { style: { fontWeight: 600, fontSize: 13 } }, "📖 " + b.title), h("div", { style: { fontSize: 11, color: C.inkSoft } }, "شروع: " + jalaliLabel(new Date(b.startDate + "T00:00:00")))),
+        h("button", { onClick: () => removeBook(b.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+      ),
+      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 45, fontFamily: "inherit" }, placeholder: "وقتی تمومش کردی، اینجا گزارش آزمون/برداشتت رو بنویس", value: reportDraft[b.id] || "", onChange: (e) => setReportDraft(Object.assign({}, reportDraft, { [b.id]: e.target.value })) }),
+      h("button", { style: Object.assign({}, btnStyle, { marginTop: 6 }), onClick: () => markDone(b.id) }, "تمام شد — ثبت گزارش")
+    )),
+    h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
+      h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "نام کتاب جدید", value: newTitle, onChange: (e) => setNewTitle(e.target.value) }),
+      h("button", { style: btnStyle, onClick: addBook }, "+")
+    ),
+
+    h("div", { style: { marginTop: 20 } },
+      h(SectionTitle, { eyebrow: "آرشیو", title: "کتاب‌های تمام‌شده (" + done.length + ")" }),
+      done.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز کتابی تمام نشده.") : null,
+      done.slice().reverse().map((b) => h("div", { key: b.id, style: { background: C.sand, borderRadius: 10, padding: "9px 12px", marginBottom: 8 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("div", null,
+            h("div", { style: { fontWeight: 600, fontSize: 13 } }, "📗 " + b.title),
+            h("div", { style: { fontSize: 11, color: C.inkSoft } }, "تمام شد: " + jalaliLabel(new Date(b.doneDate + "T00:00:00")))
+          ),
+          h("div", { style: { display: "flex", gap: 8 } },
+            h("button", { onClick: () => reopenBook(b.id), style: { border: "none", background: "none", cursor: "pointer", fontSize: 11 } }, "بازگشایی"),
+            h("button", { onClick: () => removeBook(b.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+          )
+        ),
+        b.report ? h("div", { style: { fontSize: 12, marginTop: 6, background: "#fff", borderRadius: 8, padding: 8, whiteSpace: "pre-line" } }, b.report) : null
+      ))
+    ),
+
+    h("div", { style: { marginTop: 22 } },
+      h(SectionTitle, { eyebrow: "جمع‌بندی", title: "گزارش سالانهٔ مطالعه" }),
+      done.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز کتابی تمام نشده.") : h(React.Fragment, null,
+        h("div", { style: { fontSize: 12.5, marginBottom: 8 } },
+          "مجموع کتاب‌های خوانده‌شده: ", h_b(done.length),
+          avgDays != null ? " — میانگین مدت مطالعهٔ هر کتاب: " : null,
+          avgDays != null ? h_b(avgDays + " روز") : null
+        ),
+        years.map((y) => h("div", { key: y, style: { background: C.sand, borderRadius: 10, padding: "9px 12px", marginBottom: 8 } },
+          h("div", { style: { fontWeight: 700, fontSize: 13 } }, "سال " + y + " — " + byYear[y].length + " کتاب"),
+          h("div", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: 4 } }, byYear[y].map((b) => b.title).join("، "))
         ))
       )
     )
   );
 }
+function h_b(text) { return h("b", null, text); }
 
 ReactDOM.createRoot(document.getElementById("root")).render(h(App));
 
