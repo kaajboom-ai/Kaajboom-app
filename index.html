@@ -27,12 +27,12 @@
 
 <script>
 const firebaseConfig = {
-  apiKey: "AIzaSyCLiJMuToDZo_3_0AHsybIk5AE1iVjChAk",
-  authDomain: "kaajboom-836aa.firebaseapp.com",
-  projectId: "kaajboom-836aa",
-  storageBucket: "kaajboom-836aa.firebasestorage.app",
-  messagingSenderId: "380238751095",
-  appId: "1:380238751095:web:bbf1152675c8a3d57a2d72"
+  apiKey: "AIzaSyBM2Eaflg8ORlAcm7DrsoX0XRXdvXQGPz8",
+  authDomain: "kaajboom-525fb.firebaseapp.com",
+  projectId: "kaajboom-525fb",
+  storageBucket: "kaajboom-525fb.firebasestorage.app",
+  messagingSenderId: "262477011707",
+  appId: "1:262477011707:web:8445508277928da19dae5e"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
@@ -428,11 +428,6 @@ function App() {
   const lastFin = financeByMonth[financeByMonth.length - 1] || { "درآمد": 0, "هزینه": 0 };
   const lastCarbon = carbonSeries[carbonSeries.length - 1] || { "کربن": 0 };
 
-  if (firebaseConfig.apiKey === "PASTE_HERE") {
-    return h("div", { dir: "rtl", style: { padding: 30, fontFamily: "inherit", color: C.pomegranate, background: C.sand, minHeight: "100vh" } },
-      "⚠️ اول باید تنظیمات Firebase را در ابتدای فایل index.html جایگزین «PASTE_HERE» کنید."
-    );
-  }
   if (!allLoaded) return h("div", { dir: "rtl", style: { padding: 30, color: C.inkSoft } }, "در حال بارگذاری…");
   if (finErr) return h("div", { dir: "rtl", style: { padding: 30, color: C.pomegranate } }, "خطای اتصال به پایگاه‌داده: " + finErr);
 
