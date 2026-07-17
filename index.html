@@ -15,17 +15,17 @@
 </style>
 
 <script>
-  window.addEventListener("error", function (e) {
+  function showErrorBanner(msg) {
     var div = document.createElement("div");
     div.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#c0392b;color:#fff;padding:10px;font-size:12px;z-index:99999;direction:ltr;text-align:left;white-space:pre-wrap;max-height:45vh;overflow:auto;font-family:monospace";
-    div.textContent = "JS ERROR: " + e.message + "\n" + (e.filename || "") + ":" + e.lineno + ":" + e.colno;
+    div.textContent = msg;
     document.body.appendChild(div);
+  }
+  window.addEventListener("error", function (e) {
+    showErrorBanner("JS ERROR: " + e.message + "\n" + (e.filename || "") + ":" + e.lineno + ":" + e.colno);
   });
   window.addEventListener("unhandledrejection", function (e) {
-    var div = document.createElement("div");
-    div.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#c0392b;color:#fff;padding:10px;font-size:12px;z-index:99999;direction:ltr;text-align:left;white-space:pre-wrap;max-height:45vh;overflow:auto;font-family:monospace";
-    div.textContent = "PROMISE ERROR: " + (e.reason && e.reason.message ? e.reason.message : String(e.reason));
-    document.body.appendChild(div);
+    showErrorBanner("PROMISE ERROR: " + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
   });
 </script>
 
@@ -63,8 +63,8 @@ const C = {
   pomegranate: "#8E2A3B", gold: "#C9A227", sage: "#6B7A57", sageSoft: "#8FA073",
 };
 const MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
-const INCOME_CATEGORIES = ["اقامت", "فروشگاه", "تور", "غذای بیرون"];
-const EXPENSE_CATEGORIES = ["قبوض", "غذای مهمان (صبحانه)", "تعمیرات ساختمان", "هدیه به مهمان", "هزینه‌های اداری", "وام", "حقوق پرسنل", "بیمه پرسنل", "سرمایه‌گذاری (گاوصندوق)", "غذای بیرون"];
+const DEFAULT_INCOME_CATEGORIES = ["اقامت", "فروشگاه", "تور", "غذای بیرون"];
+const DEFAULT_EXPENSE_CATEGORIES = ["قبوض", "غذای مهمان (صبحانه)", "تعمیرات ساختمان", "هدیه به مهمان", "هزینه‌های اداری", "وام", "حقوق پرسنل", "بیمه پرسنل", "سرمایه‌گذاری (گاوصندوق)", "غذای بیرون"];
 const DEFAULT_ACCOUNTS = ["بانک ملی", "بانک دوم", "گاوصندوق"];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -216,17 +216,17 @@ function useDoc(docId, initial) {
     const unsub = ref.onSnapshot(
       (snap) => {
         if (snap.exists) setValue(snap.data().value);
-        else ref.set({ value: initial }).catch(() => {});
+        else ref.set({ value: initial }).catch((e) => showErrorBanner("FIRESTORE SEED ERROR (" + docId + "): " + e));
         setLoaded(true);
       },
-      (e) => { setErr(String(e)); setLoaded(true); }
+      (e) => { setErr(String(e)); setLoaded(true); showErrorBanner("FIRESTORE READ ERROR (" + docId + "): " + e); }
     );
     return unsub;
   }, [docId]);
   const update = (next) => {
     const resolved = typeof next === "function" ? next(value) : next;
     setValue(resolved);
-    db.collection("kajboom").doc(docId).set({ value: resolved }).catch((e) => setErr(String(e)));
+    db.collection("kajboom").doc(docId).set({ value: resolved }).catch((e) => { setErr(String(e)); showErrorBanner("FIRESTORE WRITE ERROR (" + docId + "): " + e); });
   };
   return [value, update, loaded, err];
 }
@@ -359,9 +359,11 @@ function App() {
   const st = useDoc("settings", { apiKey: "" }); const settings = st[0], setSettings = st[1], stL = st[2];
   const gr = useDoc("growth", { books: [] }); const growth = gr[0], setGrowth = gr[1], grL = gr[2];
   const ac = useDoc("accounts", DEFAULT_ACCOUNTS); const accounts = ac[0], setAccounts = ac[1], accL = ac[2];
+  const icg = useDoc("incomeCategories", DEFAULT_INCOME_CATEGORIES); const incomeCategories = icg[0], setIncomeCategories = icg[1], icgL = icg[2];
+  const ecg = useDoc("expenseCategories", DEFAULT_EXPENSE_CATEGORIES); const expenseCategories = ecg[0], setExpenseCategories = ecg[1], ecgL = ecg[2];
 
   const addFinanceEntry = (e) => setFinance((f) => f.concat([Object.assign({}, e, { id: uid() })]));
-  const allLoaded = roomsL && syL && eqL && invL && finL && carbonL && evL && accL && stL && grL && guL;
+  const allLoaded = roomsL && syL && eqL && invL && finL && carbonL && evL && accL && stL && grL && guL && icgL && ecgL;
 
   const financeByMonth = useMemo(() => {
     const map = {};
@@ -476,8 +478,8 @@ function App() {
       tab === "reservations" ? h(ReservationsTab, { rooms: rooms, setRooms: setRooms, stays: stays, setStays: setStays, addFinanceEntry: addFinanceEntry, accounts: accounts, guests: guests, setGuests: setGuests }) : null,
       tab === "guests" ? h(GuestsTab, { guests: guests, setGuests: setGuests, stays: stays, setStays: setStays, rooms: rooms, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
       tab === "maintenance" ? h(MaintenanceTab, { equipment: equipment, setEquipment: setEquipment, addFinanceEntry: addFinanceEntry, accounts: accounts, equipStatus: equipStatus }) : null,
-      tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount }) : null,
-      tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
+      tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount, incomeCategories: incomeCategories, setIncomeCategories: setIncomeCategories, expenseCategories: expenseCategories, setExpenseCategories: setExpenseCategories }) : null,
+      tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry, accounts: accounts, expenseCategories: expenseCategories }) : null,
       tab === "carbon" ? h(CarbonTab, { carbon: carbon, setCarbon: setCarbon, carbonSeries: carbonSeries }) : null,
       tab === "events" ? h(EventsTab, { events: events, setEvents: setEvents, accounts: accounts }) : null,
       tab === "growth" ? h(GrowthTab, { growth: growth, setGrowth: setGrowth }) : null
@@ -896,12 +898,16 @@ function AccountingTab(props) {
   const finance = props.finance, setFinance = props.setFinance, financeByMonth = props.financeByMonth;
   const incomeByCategory = props.incomeByCategory, expenseByCategory = props.expenseByCategory;
   const accounts = props.accounts, setAccounts = props.setAccounts, balanceByAccount = props.balanceByAccount;
+  const incomeCategories = props.incomeCategories, setIncomeCategories = props.setIncomeCategories;
+  const expenseCategories = props.expenseCategories, setExpenseCategories = props.setExpenseCategories;
 
-  const [form, setForm] = useState({ date: todayISO(), flow: "income", category: INCOME_CATEGORIES[0], account: accounts[0] || "", amount: "", note: "" });
+  const [form, setForm] = useState({ date: todayISO(), flow: "income", category: incomeCategories[0], account: accounts[0] || "", amount: "", note: "" });
   const [editAcc, setEditAcc] = useState(null);
   const [accDraft, setAccDraft] = useState("");
   const [newAcc, setNewAcc] = useState("");
   const [range, setRange] = useState({ from: todayISO(), to: todayISO() });
+  const [newIncomeCat, setNewIncomeCat] = useState("");
+  const [newExpenseCat, setNewExpenseCat] = useState("");
 
   const addEntry = () => {
     if (!form.amount) return;
@@ -920,6 +926,11 @@ function AccountingTab(props) {
   };
   const addAccount = () => { if (!newAcc.trim()) return; setAccounts((accs) => accs.concat([newAcc.trim()])); setNewAcc(""); };
   const removeAccount = (a) => setAccounts((accs) => accs.filter((x) => x !== a));
+
+  const addIncomeCat = () => { if (!newIncomeCat.trim()) return; setIncomeCategories((cs) => cs.concat([newIncomeCat.trim()])); setNewIncomeCat(""); };
+  const removeIncomeCat = (c) => setIncomeCategories((cs) => cs.filter((x) => x !== c));
+  const addExpenseCat = () => { if (!newExpenseCat.trim()) return; setExpenseCategories((cs) => cs.concat([newExpenseCat.trim()])); setNewExpenseCat(""); };
+  const removeExpenseCat = (c) => setExpenseCategories((cs) => cs.filter((x) => x !== c));
 
   const rangeEntries = useMemo(() => finance.filter((e) => e.date >= range.from && e.date <= range.to), [finance, range]);
   const rangeIncome = rangeEntries.filter((e) => e.flow === "income").reduce((s, e) => s + Number(e.amount || 0), 0);
@@ -948,27 +959,52 @@ function AccountingTab(props) {
     ),
 
     h(Niche, { style: { marginBottom: 14 } },
+      h(SectionTitle, { eyebrow: "دسته‌بندی‌ها", title: "دسته‌های درآمد و هزینه (قابل افزودن/حذف)" }),
+      h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
+        h("div", { style: { flex: 1, minWidth: 200 } },
+          h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دسته‌های درآمد"),
+          incomeCategories.map((c) => h("div", { key: c, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "5px 10px", marginBottom: 4, fontSize: 12 } },
+            h("span", null, c), h("button", { onClick: () => removeIncomeCat(c), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+          )),
+          h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
+            h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "دستهٔ درآمد جدید", value: newIncomeCat, onChange: (e) => setNewIncomeCat(e.target.value) }),
+            h("button", { style: btnStyle, onClick: addIncomeCat }, "+")
+          )
+        ),
+        h("div", { style: { flex: 1, minWidth: 200 } },
+          h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دسته‌های هزینه"),
+          expenseCategories.map((c) => h("div", { key: c, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "5px 10px", marginBottom: 4, fontSize: 12 } },
+            h("span", null, c), h("button", { onClick: () => removeExpenseCat(c), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+          )),
+          h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
+            h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "دستهٔ هزینهٔ جدید", value: newExpenseCat, onChange: (e) => setNewExpenseCat(e.target.value) }),
+            h("button", { style: btnStyle, onClick: addExpenseCat }, "+")
+          )
+        )
+      )
+    ),
+
+    h(Niche, { style: { marginBottom: 14 } },
       h(SectionTitle, { eyebrow: "گزارش مالی", title: "سود و زیان ماهانه" }),
       financeByMonth.length > 0 ? h(MiniChart, { data: financeByMonth, keys: ["درآمد", "هزینه"], colors: [C.clay, C.pomegranate], type: "line" }) : h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز تراکنشی ثبت نشده."),
       lastFin ? h("div", { style: { marginTop: 8, fontSize: 12, background: C.sand, borderRadius: 10, padding: 10 } }, "سود خالص " + lastFin.month + ": " + (lastFin["درآمد"] - lastFin["هزینه"])) : null,
       h("div", { style: { display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" } },
         h("div", { style: { flex: 1, minWidth: 180 } },
           h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "درآمد به تفکیک نوع"),
-          INCOME_CATEGORIES.map((s) => h("div", { key: s, style: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" } }, h("span", null, s), h("b", null, incomeByCategory[s] || 0)))
+          incomeCategories.map((s) => h("div", { key: s, style: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" } }, h("span", null, s), h("b", null, incomeByCategory[s] || 0)))
         ),
         h("div", { style: { flex: 1, minWidth: 180 } },
           h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "هزینه به تفکیک نوع"),
-          EXPENSE_CATEGORIES.map((s) => h("div", { key: s, style: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" } }, h("span", null, s), h("b", null, expenseByCategory[s] || 0)))
+          expenseCategories.map((s) => h("div", { key: s, style: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" } }, h("span", null, s), h("b", null, expenseByCategory[s] || 0)))
         )
       )
     ),
 
     h(Niche, { style: { marginBottom: 14 } },
       h(SectionTitle, { eyebrow: "گزارش صورتحساب", title: "از تاریخ تا تاریخ" }),
-      h("div", { style: { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" } },
-        h("input", { type: "date", style: inputStyle, value: range.from, onChange: (e) => setRange(Object.assign({}, range, { from: e.target.value })) }),
-        h("span", { style: { fontSize: 12 } }, "تا"),
-        h("input", { type: "date", style: inputStyle, value: range.to, onChange: (e) => setRange(Object.assign({}, range, { to: e.target.value })) })
+      h("div", { style: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" } },
+        h(JalaliDateInput, { label: "از تاریخ", value: range.from, onChange: (iso) => setRange((r) => Object.assign({}, r, { from: iso })) }),
+        h(JalaliDateInput, { label: "تا تاریخ", value: range.to, onChange: (iso) => setRange((r) => Object.assign({}, r, { to: iso })) })
       ),
       h("div", { style: { display: "flex", gap: 16, marginTop: 10, fontSize: 12.5 } },
         h("div", null, "درآمد: ", h("b", { style: { color: C.sage } }, rangeIncome)),
@@ -977,7 +1013,7 @@ function AccountingTab(props) {
       ),
       h("div", { style: { maxHeight: 180, overflowY: "auto", marginTop: 10 } },
         rangeEntries.slice().reverse().map((e) => h("div", { key: e.id, style: { fontSize: 11.5, padding: "4px 0", borderBottom: "1px solid " + C.sandDark } },
-          e.date + " — " + e.category + " (" + (e.account || "-") + ") — " + e.amount + " " + (e.flow === "income" ? "▲" : "▼")
+          jalaliLabel(new Date(e.date + "T00:00:00")) + " — " + e.category + " (" + (e.account || "-") + ") — " + e.amount + " " + (e.flow === "income" ? "▲" : "▼")
         ))
       )
     ),
@@ -986,17 +1022,26 @@ function AccountingTab(props) {
       h(SectionTitle, { eyebrow: "ثبت تراکنش", title: "تراکنش‌های اخیر" }),
       h("div", { style: { maxHeight: 200, overflowY: "auto" } },
         finance.slice().reverse().map((e) => h("div", { key: e.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "6px 10px", fontSize: 12, marginBottom: 5 } },
-          h("span", null, e.date + " — " + e.category + " (" + (e.account || "-") + ") — " + e.amount + " ", h(Pill, { text: e.flow === "income" ? "درآمد" : "هزینه", tone: e.flow })),
+          h("span", null, jalaliLabel(new Date(e.date + "T00:00:00")) + " — " + e.category + " (" + (e.account || "-") + ") — " + e.amount + " ", h(Pill, { text: e.flow === "income" ? "درآمد" : "هزینه", tone: e.flow })),
           h("button", { onClick: () => removeEntry(e.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
         ))
       ),
-      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 } },
-        h("input", { type: "date", style: inputStyle, value: form.date, onChange: (e) => setForm(Object.assign({}, form, { date: e.target.value })) }),
-        h("select", { style: inputStyle, value: form.flow, onChange: (e) => { const flow = e.target.value; setForm(Object.assign({}, form, { flow: flow, category: (flow === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES)[0] })); } }, h("option", { value: "income" }, "درآمد"), h("option", { value: "expense" }, "هزینه")),
-        h("select", { style: inputStyle, value: form.category, onChange: (e) => setForm(Object.assign({}, form, { category: e.target.value })) }, (form.flow === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => h("option", { key: c }, c))),
-        h("select", { style: inputStyle, value: form.account, onChange: (e) => setForm(Object.assign({}, form, { account: e.target.value })) }, accounts.map((a) => h("option", { key: a }, a))),
-        h("input", { style: { ...inputStyle, width: 80 }, placeholder: "مبلغ", value: form.amount, onChange: (e) => setForm(Object.assign({}, form, { amount: e.target.value })) }),
-        h("input", { style: inputStyle, placeholder: "یادداشت (اختیاری)", value: form.note, onChange: (e) => setForm(Object.assign({}, form, { note: e.target.value })) }),
+      h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" } },
+        h(JalaliDateInput, { label: "تاریخ", value: form.date, onChange: (iso) => setForm((f) => Object.assign({}, f, { date: iso })) }),
+        h("div", null,
+          h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "نوع"),
+          h("select", { style: inputStyle, value: form.flow, onChange: (e) => { const flow = e.target.value; setForm(Object.assign({}, form, { flow: flow, category: (flow === "income" ? incomeCategories : expenseCategories)[0] })); } }, h("option", { value: "income" }, "درآمد"), h("option", { value: "expense" }, "هزینه"))
+        ),
+        h("div", null,
+          h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "دسته"),
+          h("select", { style: inputStyle, value: form.category, onChange: (e) => setForm(Object.assign({}, form, { category: e.target.value })) }, (form.flow === "income" ? incomeCategories : expenseCategories).map((c) => h("option", { key: c }, c)))
+        ),
+        h("div", null,
+          h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "حساب"),
+          h("select", { style: inputStyle, value: form.account, onChange: (e) => setForm(Object.assign({}, form, { account: e.target.value })) }, accounts.map((a) => h("option", { key: a }, a)))
+        ),
+        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "مبلغ"), h("input", { style: { ...inputStyle, width: 80 }, value: form.amount, onChange: (e) => setForm(Object.assign({}, form, { amount: e.target.value })) })),
+        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "یادداشت"), h("input", { style: inputStyle, placeholder: "اختیاری", value: form.note, onChange: (e) => setForm(Object.assign({}, form, { note: e.target.value })) })),
         h("button", { style: btnStyle, onClick: addEntry }, "افزودن")
       )
     )
@@ -1004,15 +1049,15 @@ function AccountingTab(props) {
 }
 
 function InventoryTab(props) {
-  const inventory = props.inventory, setInventory = props.setInventory, addFinanceEntry = props.addFinanceEntry, accounts = props.accounts;
-  const [newItem, setNewItem] = useState({ name: "", qty: "", min: "", unit: "", cost: "", category: EXPENSE_CATEGORIES[0], account: accounts[0] || "" });
+  const inventory = props.inventory, setInventory = props.setInventory, addFinanceEntry = props.addFinanceEntry, accounts = props.accounts, expenseCategories = props.expenseCategories;
+  const [newItem, setNewItem] = useState({ name: "", qty: "", min: "", unit: "", cost: "", category: expenseCategories[0], account: accounts[0] || "" });
   const [noteDraft, setNoteDraft] = useState({});
 
   const addItem = () => {
     if (!newItem.name) return;
     setInventory((inv) => inv.concat([{ id: uid(), name: newItem.name, qty: Number(newItem.qty) || 0, min: Number(newItem.min) || 0, unit: newItem.unit || "عدد", log: [] }]));
     if (newItem.cost) addFinanceEntry({ date: todayISO(), flow: "expense", category: newItem.category, account: newItem.account, amount: Number(newItem.cost) || 0, note: "خرید انبار: " + newItem.name });
-    setNewItem({ name: "", qty: "", min: "", unit: "", cost: "", category: EXPENSE_CATEGORIES[0], account: accounts[0] || "" });
+    setNewItem({ name: "", qty: "", min: "", unit: "", cost: "", category: expenseCategories[0], account: accounts[0] || "" });
   };
   const removeItem = (id) => setInventory((inv) => inv.filter((i) => i.id !== id));
   const bump = (id, d) => {
@@ -1049,7 +1094,7 @@ function InventoryTab(props) {
       h("input", { style: { ...inputStyle, width: 60 }, placeholder: "حداقل", value: newItem.min, onChange: (e) => setNewItem(Object.assign({}, newItem, { min: e.target.value })) }),
       h("input", { style: { ...inputStyle, width: 55 }, placeholder: "واحد", value: newItem.unit, onChange: (e) => setNewItem(Object.assign({}, newItem, { unit: e.target.value })) }),
       h("input", { style: { ...inputStyle, width: 80 }, placeholder: "هزینه خرید (اختیاری)", value: newItem.cost, onChange: (e) => setNewItem(Object.assign({}, newItem, { cost: e.target.value })) }),
-      h("select", { style: inputStyle, value: newItem.category, onChange: (e) => setNewItem(Object.assign({}, newItem, { category: e.target.value })) }, EXPENSE_CATEGORIES.map((c) => h("option", { key: c }, c))),
+      h("select", { style: inputStyle, value: newItem.category, onChange: (e) => setNewItem(Object.assign({}, newItem, { category: e.target.value })) }, expenseCategories.map((c) => h("option", { key: c }, c))),
       h("select", { style: inputStyle, value: newItem.account, onChange: (e) => setNewItem(Object.assign({}, newItem, { account: e.target.value })) }, accounts.map((a) => h("option", { key: a }, a))),
       h("button", { style: btnStyle, onClick: addItem }, "+")
     ),
