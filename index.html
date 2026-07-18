@@ -54,7 +54,7 @@ const db = firebase.firestore();
 </script>
 
 <script>
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 const h = React.createElement;
 
 const C = {
@@ -209,13 +209,14 @@ function AIKeyBox(props) {
 
 function useDoc(docId, initial) {
   const [value, setValue] = useState(initial);
+  const valueRef = useRef(initial);
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState(null);
   useEffect(() => {
     const ref = db.collection("kajboom").doc(docId);
     const unsub = ref.onSnapshot(
       (snap) => {
-        if (snap.exists) setValue(snap.data().value);
+        if (snap.exists) { valueRef.current = snap.data().value; setValue(snap.data().value); }
         else ref.set({ value: initial }).catch((e) => showErrorBanner("FIRESTORE SEED ERROR (" + docId + "): " + e));
         setLoaded(true);
       },
@@ -224,7 +225,8 @@ function useDoc(docId, initial) {
     return unsub;
   }, [docId]);
   const update = (next) => {
-    const resolved = typeof next === "function" ? next(value) : next;
+    const resolved = typeof next === "function" ? next(valueRef.current) : next;
+    valueRef.current = resolved;
     setValue(resolved);
     db.collection("kajboom").doc(docId).set({ value: resolved }).catch((e) => { setErr(String(e)); showErrorBanner("FIRESTORE WRITE ERROR (" + docId + "): " + e); });
   };
