@@ -903,21 +903,32 @@ function AccountingTab(props) {
   const incomeCategories = props.incomeCategories, setIncomeCategories = props.setIncomeCategories;
   const expenseCategories = props.expenseCategories, setExpenseCategories = props.setExpenseCategories;
 
-  const [form, setForm] = useState({ date: todayISO(), flow: "income", category: incomeCategories[0], account: accounts[0] || "", amount: "", note: "" });
+  const blankForm = { date: todayISO(), flow: "income", category: incomeCategories[0], account: accounts[0] || "", amount: "", note: "" };
+  const [form, setForm] = useState(blankForm);
+  const [editingId, setEditingId] = useState(null);
   const [editAcc, setEditAcc] = useState(null);
   const [accDraft, setAccDraft] = useState("");
   const [newAcc, setNewAcc] = useState("");
   const [range, setRange] = useState({ from: todayISO(), to: todayISO() });
   const [newIncomeCat, setNewIncomeCat] = useState("");
   const [newExpenseCat, setNewExpenseCat] = useState("");
+  const [showManage, setShowManage] = useState(false);
 
-  const addEntry = () => {
+  const submitEntry = () => {
     if (!form.amount) return;
-    setFinance((f) => f.concat([Object.assign({}, form, { amount: Number(form.amount) || 0, id: uid() })]));
-    setForm(Object.assign({}, form, { amount: "", note: "" }));
+    if (editingId) {
+      setFinance((f) => f.map((e) => e.id === editingId ? Object.assign({}, form, { amount: Number(form.amount) || 0, id: editingId }) : e));
+      setEditingId(null);
+    } else {
+      setFinance((f) => f.concat([Object.assign({}, form, { amount: Number(form.amount) || 0, id: uid() })]));
+    }
+    setForm(blankForm);
   };
-  const removeEntry = (id) => setFinance((f) => f.filter((e) => e.id !== id));
+  const startEdit = (e) => { setEditingId(e.id); setForm({ date: e.date, flow: e.flow, category: e.category, account: e.account || accounts[0] || "", amount: String(e.amount), note: e.note || "" }); };
+  const cancelEdit = () => { setEditingId(null); setForm(blankForm); };
+  const removeEntry = (id) => { setFinance((f) => f.filter((e) => e.id !== id)); if (editingId === id) cancelEdit(); };
   const lastFin = financeByMonth[financeByMonth.length - 1];
+  const totalBalance = accounts.reduce((s, a) => s + (balanceByAccount[a] || 0), 0);
 
   const saveAccName = (oldName) => {
     const newName = accDraft.trim();
@@ -938,58 +949,67 @@ function AccountingTab(props) {
   const rangeIncome = rangeEntries.filter((e) => e.flow === "income").reduce((s, e) => s + Number(e.amount || 0), 0);
   const rangeExpense = rangeEntries.filter((e) => e.flow === "expense").reduce((s, e) => s + Number(e.amount || 0), 0);
 
+  const fieldLabelStyle = { fontSize: 10.5, color: C.inkSoft, marginBottom: 3 };
+
   return h(React.Fragment, null,
-    h(Niche, { style: { marginBottom: 14 } },
-      h(SectionTitle, { eyebrow: "بانک‌ها و صندوق‌ها", title: "موجودی هر حساب" }),
-      accounts.map((a) => h("div", { key: a, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "8px 12px", marginBottom: 6 } },
-        editAcc === a
-          ? h("div", { style: { display: "flex", gap: 6 } },
-              h("input", { style: inputStyle, value: accDraft, onChange: (e) => setAccDraft(e.target.value) }),
-              h("button", { style: btnStyle, onClick: () => saveAccName(a) }, "ذخیره")
-            )
-          : h("div", { style: { fontWeight: 600, fontSize: 13 } }, a),
-        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
-          h("b", { style: { color: C.clay } }, balanceByAccount[a] || 0),
-          h("button", { onClick: () => { setEditAcc(a); setAccDraft(a); }, style: { border: "none", background: "none", cursor: "pointer" } }, "✎"),
-          h("button", { onClick: () => removeAccount(a), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
-        )
-      )),
-      h("div", { style: { display: "flex", gap: 6, marginTop: 8 } },
-        h("input", { style: inputStyle, placeholder: "نام حساب/صندوق جدید", value: newAcc, onChange: (e) => setNewAcc(e.target.value) }),
-        h("button", { style: btnStyle, onClick: addAccount }, "+")
+    h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 } },
+      h(KPICard, { emoji: "🏦", label: "مجموع موجودی حساب‌ها", value: totalBalance, tone: C.night }),
+      h(KPICard, { emoji: "📈", label: "درآمد " + (lastFin ? lastFin.month : "این ماه"), value: lastFin ? lastFin["درآمد"] : 0, tone: C.sage }),
+      h(KPICard, { emoji: "📉", label: "هزینه " + (lastFin ? lastFin.month : "این ماه"), value: lastFin ? lastFin["هزینه"] : 0, tone: C.pomegranate }),
+      h(KPICard, { emoji: "💰", label: "سود خالص", value: lastFin ? (lastFin["درآمد"] - lastFin["هزینه"]) : 0, tone: C.clay })
+    ),
+
+    h(Niche, { style: { marginBottom: 14, border: editingId ? ("1px solid " + C.gold) : undefined } },
+      h(SectionTitle, { eyebrow: editingId ? "در حال ویرایش" : "ثبت تراکنش جدید", title: editingId ? "ویرایش تراکنش" : "درآمد یا هزینهٔ جدید" }),
+      h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" } },
+        h(JalaliDateInput, { label: "تاریخ", value: form.date, onChange: (iso) => setForm((f) => Object.assign({}, f, { date: iso })) }),
+        h("div", null,
+          h("div", { style: fieldLabelStyle }, "نوع"),
+          h("select", { style: inputStyle, value: form.flow, onChange: (e) => { const flow = e.target.value; setForm(Object.assign({}, form, { flow: flow, category: (flow === "income" ? incomeCategories : expenseCategories)[0] })); } },
+            h("option", { value: "income" }, "درآمد"), h("option", { value: "expense" }, "هزینه"))
+        ),
+        h("div", null,
+          h("div", { style: fieldLabelStyle }, "دسته"),
+          h("select", { style: inputStyle, value: form.category, onChange: (e) => setForm(Object.assign({}, form, { category: e.target.value })) }, (form.flow === "income" ? incomeCategories : expenseCategories).map((c) => h("option", { key: c }, c)))
+        ),
+        h("div", null,
+          h("div", { style: fieldLabelStyle }, "حساب"),
+          h("select", { style: inputStyle, value: form.account, onChange: (e) => setForm(Object.assign({}, form, { account: e.target.value })) }, accounts.map((a) => h("option", { key: a }, a)))
+        ),
+        h("div", null, h("div", { style: fieldLabelStyle }, "مبلغ"), h("input", { style: { ...inputStyle, width: 90 }, value: form.amount, onChange: (e) => setForm(Object.assign({}, form, { amount: e.target.value })) })),
+        h("div", { style: { flex: 1, minWidth: 140 } }, h("div", { style: fieldLabelStyle }, "یادداشت"), h("input", { style: { ...inputStyle, width: "100%" }, placeholder: "اختیاری", value: form.note, onChange: (e) => setForm(Object.assign({}, form, { note: e.target.value })) })),
+        h("button", { style: btnStyle, onClick: submitEntry }, editingId ? "ذخیرهٔ تغییرات" : "افزودن"),
+        editingId ? h("button", { style: Object.assign({}, btnStyle, { background: C.inkSoft }), onClick: cancelEdit }, "انصراف") : null
       )
     ),
 
     h(Niche, { style: { marginBottom: 14 } },
-      h(SectionTitle, { eyebrow: "دسته‌بندی‌ها", title: "دسته‌های درآمد و هزینه (قابل افزودن/حذف)" }),
-      h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
-        h("div", { style: { flex: 1, minWidth: 200 } },
-          h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دسته‌های درآمد"),
-          incomeCategories.map((c) => h("div", { key: c, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "5px 10px", marginBottom: 4, fontSize: 12 } },
-            h("span", null, c), h("button", { onClick: () => removeIncomeCat(c), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
-          )),
-          h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
-            h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "دستهٔ درآمد جدید", value: newIncomeCat, onChange: (e) => setNewIncomeCat(e.target.value) }),
-            h("button", { style: btnStyle, onClick: addIncomeCat }, "+")
+      h(SectionTitle, { eyebrow: "دفتر تراکنش‌ها", title: "لیست کامل، جدیدترین بالا" }),
+      finance.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز تراکنشی ثبت نشده.") : null,
+      h("div", { style: { maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 } },
+        finance.slice().reverse().map((e) => h("div", {
+          key: e.id,
+          style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: editingId === e.id ? "#FBF0D9" : C.sand, border: editingId === e.id ? ("1px solid " + C.gold) : "1px solid transparent", borderRadius: 10, padding: "8px 12px" }
+        },
+          h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+            h("div", { style: { width: 30, height: 30, borderRadius: "50%", background: e.flow === "income" ? C.sage : C.pomegranate, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 } }, e.flow === "income" ? "▲" : "▼"),
+            h("div", null,
+              h("div", { style: { fontWeight: 700, fontSize: 13 } }, e.category),
+              h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, jalaliLabel(new Date(e.date + "T00:00:00")) + " — " + (e.account || "-") + (e.note ? " — " + e.note : ""))
+            )
+          ),
+          h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+            h("b", { style: { fontSize: 14, color: e.flow === "income" ? C.sage : C.pomegranate } }, (e.flow === "income" ? "+" : "−") + e.amount),
+            h("button", { onClick: () => startEdit(e), style: { border: "none", background: "none", cursor: "pointer", fontSize: 14 } }, "✎"),
+            h("button", { onClick: () => removeEntry(e.id), style: { border: "none", background: "none", cursor: "pointer", fontSize: 14 } }, "🗑")
           )
-        ),
-        h("div", { style: { flex: 1, minWidth: 200 } },
-          h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دسته‌های هزینه"),
-          expenseCategories.map((c) => h("div", { key: c, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "5px 10px", marginBottom: 4, fontSize: 12 } },
-            h("span", null, c), h("button", { onClick: () => removeExpenseCat(c), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
-          )),
-          h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
-            h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "دستهٔ هزینهٔ جدید", value: newExpenseCat, onChange: (e) => setNewExpenseCat(e.target.value) }),
-            h("button", { style: btnStyle, onClick: addExpenseCat }, "+")
-          )
-        )
+        ))
       )
     ),
 
     h(Niche, { style: { marginBottom: 14 } },
       h(SectionTitle, { eyebrow: "گزارش مالی", title: "سود و زیان ماهانه" }),
       financeByMonth.length > 0 ? h(MiniChart, { data: financeByMonth, keys: ["درآمد", "هزینه"], colors: [C.clay, C.pomegranate], type: "line" }) : h("div", { style: { fontSize: 12, color: C.inkSoft } }, "هنوز تراکنشی ثبت نشده."),
-      lastFin ? h("div", { style: { marginTop: 8, fontSize: 12, background: C.sand, borderRadius: 10, padding: 10 } }, "سود خالص " + lastFin.month + ": " + (lastFin["درآمد"] - lastFin["هزینه"])) : null,
       h("div", { style: { display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" } },
         h("div", { style: { flex: 1, minWidth: 180 } },
           h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "درآمد به تفکیک نوع"),
@@ -1021,31 +1041,52 @@ function AccountingTab(props) {
     ),
 
     h(Niche, null,
-      h(SectionTitle, { eyebrow: "ثبت تراکنش", title: "تراکنش‌های اخیر" }),
-      h("div", { style: { maxHeight: 200, overflowY: "auto" } },
-        finance.slice().reverse().map((e) => h("div", { key: e.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "6px 10px", fontSize: 12, marginBottom: 5 } },
-          h("span", null, jalaliLabel(new Date(e.date + "T00:00:00")) + " — " + e.category + " (" + (e.account || "-") + ") — " + e.amount + " ", h(Pill, { text: e.flow === "income" ? "درآمد" : "هزینه", tone: e.flow })),
-          h("button", { onClick: () => removeEntry(e.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
-        ))
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }, onClick: () => setShowManage(!showManage) },
+        h(SectionTitle, { eyebrow: "تنظیمات", title: "مدیریت حساب‌ها و دسته‌بندی‌ها" }),
+        h("span", { style: { fontSize: 18, color: C.inkSoft } }, showManage ? "▲" : "▼")
       ),
-      h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" } },
-        h(JalaliDateInput, { label: "تاریخ", value: form.date, onChange: (iso) => setForm((f) => Object.assign({}, f, { date: iso })) }),
-        h("div", null,
-          h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "نوع"),
-          h("select", { style: inputStyle, value: form.flow, onChange: (e) => { const flow = e.target.value; setForm(Object.assign({}, form, { flow: flow, category: (flow === "income" ? incomeCategories : expenseCategories)[0] })); } }, h("option", { value: "income" }, "درآمد"), h("option", { value: "expense" }, "هزینه"))
+      showManage ? h("div", { style: { marginTop: 10 } },
+        h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "بانک‌ها و صندوق‌ها"),
+        accounts.map((a) => h("div", { key: a, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "8px 12px", marginBottom: 6 } },
+          editAcc === a
+            ? h("div", { style: { display: "flex", gap: 6 } },
+                h("input", { style: inputStyle, value: accDraft, onChange: (e) => setAccDraft(e.target.value) }),
+                h("button", { style: btnStyle, onClick: () => saveAccName(a) }, "ذخیره")
+              )
+            : h("div", { style: { fontWeight: 600, fontSize: 13 } }, a),
+          h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+            h("b", { style: { color: C.clay } }, balanceByAccount[a] || 0),
+            h("button", { onClick: () => { setEditAcc(a); setAccDraft(a); }, style: { border: "none", background: "none", cursor: "pointer" } }, "✎"),
+            h("button", { onClick: () => removeAccount(a), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+          )
+        )),
+        h("div", { style: { display: "flex", gap: 6, marginTop: 8, marginBottom: 16 } },
+          h("input", { style: inputStyle, placeholder: "نام حساب/صندوق جدید", value: newAcc, onChange: (e) => setNewAcc(e.target.value) }),
+          h("button", { style: btnStyle, onClick: addAccount }, "+")
         ),
-        h("div", null,
-          h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "دسته"),
-          h("select", { style: inputStyle, value: form.category, onChange: (e) => setForm(Object.assign({}, form, { category: e.target.value })) }, (form.flow === "income" ? incomeCategories : expenseCategories).map((c) => h("option", { key: c }, c)))
-        ),
-        h("div", null,
-          h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "حساب"),
-          h("select", { style: inputStyle, value: form.account, onChange: (e) => setForm(Object.assign({}, form, { account: e.target.value })) }, accounts.map((a) => h("option", { key: a }, a)))
-        ),
-        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "مبلغ"), h("input", { style: { ...inputStyle, width: 80 }, value: form.amount, onChange: (e) => setForm(Object.assign({}, form, { amount: e.target.value })) })),
-        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "یادداشت"), h("input", { style: inputStyle, placeholder: "اختیاری", value: form.note, onChange: (e) => setForm(Object.assign({}, form, { note: e.target.value })) })),
-        h("button", { style: btnStyle, onClick: addEntry }, "افزودن")
-      )
+        h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
+          h("div", { style: { flex: 1, minWidth: 200 } },
+            h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دسته‌های درآمد"),
+            incomeCategories.map((c) => h("div", { key: c, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "5px 10px", marginBottom: 4, fontSize: 12 } },
+              h("span", null, c), h("button", { onClick: () => removeIncomeCat(c), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+            )),
+            h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
+              h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "دستهٔ درآمد جدید", value: newIncomeCat, onChange: (e) => setNewIncomeCat(e.target.value) }),
+              h("button", { style: btnStyle, onClick: addIncomeCat }, "+")
+            )
+          ),
+          h("div", { style: { flex: 1, minWidth: 200 } },
+            h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دسته‌های هزینه"),
+            expenseCategories.map((c) => h("div", { key: c, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "5px 10px", marginBottom: 4, fontSize: 12 } },
+              h("span", null, c), h("button", { onClick: () => removeExpenseCat(c), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑")
+            )),
+            h("div", { style: { display: "flex", gap: 6, marginTop: 6 } },
+              h("input", { style: { ...inputStyle, flex: 1 }, placeholder: "دستهٔ هزینهٔ جدید", value: newExpenseCat, onChange: (e) => setNewExpenseCat(e.target.value) }),
+              h("button", { style: btnStyle, onClick: addExpenseCat }, "+")
+            )
+          )
+        )
+      ) : null
     )
   );
 }
