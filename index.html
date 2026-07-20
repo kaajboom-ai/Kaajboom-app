@@ -361,11 +361,13 @@ function App() {
   const st = useDoc("settings", { apiKey: "" }); const settings = st[0], setSettings = st[1], stL = st[2];
   const gr = useDoc("growth", { books: [] }); const growth = gr[0], setGrowth = gr[1], grL = gr[2];
   const ac = useDoc("accounts", DEFAULT_ACCOUNTS); const accounts = ac[0], setAccounts = ac[1], accL = ac[2];
+  const asD = useDoc("assets", { fixedAssets: [], receivables: [], inventoryValue: 0 }); const assetsData = asD[0], setAssetsData = asD[1], asDL = asD[2];
+  const liD = useDoc("liabilities", { loans: [], payables: [] }); const liabilitiesData = liD[0], setLiabilitiesData = liD[1], liDL = liD[2];
   const icg = useDoc("incomeCategories", DEFAULT_INCOME_CATEGORIES); const incomeCategories = icg[0], setIncomeCategories = icg[1], icgL = icg[2];
   const ecg = useDoc("expenseCategories", DEFAULT_EXPENSE_CATEGORIES); const expenseCategories = ecg[0], setExpenseCategories = ecg[1], ecgL = ecg[2];
 
   const addFinanceEntry = (e) => setFinance((f) => f.concat([Object.assign({}, e, { id: uid() })]));
-  const allLoaded = roomsL && syL && eqL && invL && finL && carbonL && evL && accL && stL && grL && guL && icgL && ecgL;
+  const allLoaded = roomsL && syL && eqL && invL && finL && carbonL && evL && accL && stL && grL && guL && icgL && ecgL && asDL && liDL;
 
   const financeByMonth = useMemo(() => {
     const map = {};
@@ -480,7 +482,7 @@ function App() {
       tab === "reservations" ? h(ReservationsTab, { rooms: rooms, setRooms: setRooms, stays: stays, setStays: setStays, addFinanceEntry: addFinanceEntry, accounts: accounts, guests: guests, setGuests: setGuests }) : null,
       tab === "guests" ? h(GuestsTab, { guests: guests, setGuests: setGuests, stays: stays, setStays: setStays, rooms: rooms, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
       tab === "maintenance" ? h(MaintenanceTab, { equipment: equipment, setEquipment: setEquipment, addFinanceEntry: addFinanceEntry, accounts: accounts, equipStatus: equipStatus }) : null,
-      tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount, incomeCategories: incomeCategories, setIncomeCategories: setIncomeCategories, expenseCategories: expenseCategories, setExpenseCategories: setExpenseCategories }) : null,
+      tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount, incomeCategories: incomeCategories, setIncomeCategories: setIncomeCategories, expenseCategories: expenseCategories, setExpenseCategories: setExpenseCategories, assetsData: assetsData, setAssetsData: setAssetsData, liabilitiesData: liabilitiesData, setLiabilitiesData: setLiabilitiesData }) : null,
       tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry, accounts: accounts, expenseCategories: expenseCategories }) : null,
       tab === "carbon" ? h(CarbonTab, { carbon: carbon, setCarbon: setCarbon, carbonSeries: carbonSeries }) : null,
       tab === "events" ? h(EventsTab, { events: events, setEvents: setEvents, accounts: accounts }) : null,
@@ -896,12 +898,127 @@ function MaintenanceTab(props) {
   );
 }
 
+const ASSET_CATEGORIES = ["ساختمان", "وسیلهٔ نقلیه", "تجهیزات و ابزار", "اثاثیه و مبلمان", "سایر"];
+
+function BalanceSheetSection(props) {
+  const totalBalance = props.totalBalance, totalFixedAssets = props.totalFixedAssets, totalReceivables = props.totalReceivables, totalInventoryValue = props.totalInventoryValue, totalAssets = props.totalAssets;
+  const totalLoans = props.totalLoans, totalPayables = props.totalPayables, totalLiabilities = props.totalLiabilities, netWorth = props.netWorth;
+  const assetsData = props.assetsData, setAssetsData = props.setAssetsData, liabilitiesData = props.liabilitiesData, setLiabilitiesData = props.setLiabilitiesData;
+
+  const [open, setOpen] = useState(false);
+  const [invDraft, setInvDraft] = useState(String(assetsData.inventoryValue || 0));
+  const [newFixed, setNewFixed] = useState({ name: "", category: ASSET_CATEGORIES[0], value: "", date: todayISO() });
+  const [newRecv, setNewRecv] = useState({ name: "", amount: "", note: "" });
+  const [newLoan, setNewLoan] = useState({ name: "", amount: "", note: "" });
+  const [newPay, setNewPay] = useState({ name: "", amount: "", note: "" });
+
+  const addFixed = () => { if (!newFixed.name || !newFixed.value) return; setAssetsData(Object.assign({}, assetsData, { fixedAssets: (assetsData.fixedAssets || []).concat([{ id: uid(), name: newFixed.name, category: newFixed.category, value: Number(newFixed.value) || 0, date: newFixed.date }]) })); setNewFixed({ name: "", category: ASSET_CATEGORIES[0], value: "", date: todayISO() }); };
+  const removeFixed = (id) => setAssetsData(Object.assign({}, assetsData, { fixedAssets: (assetsData.fixedAssets || []).filter((a) => a.id !== id) }));
+  const saveInv = () => setAssetsData(Object.assign({}, assetsData, { inventoryValue: Number(invDraft) || 0 }));
+  const addRecv = () => { if (!newRecv.name || !newRecv.amount) return; setAssetsData(Object.assign({}, assetsData, { receivables: (assetsData.receivables || []).concat([{ id: uid(), name: newRecv.name, amount: Number(newRecv.amount) || 0, note: newRecv.note }]) })); setNewRecv({ name: "", amount: "", note: "" }); };
+  const removeRecv = (id) => setAssetsData(Object.assign({}, assetsData, { receivables: (assetsData.receivables || []).filter((a) => a.id !== id) }));
+  const addLoan = () => { if (!newLoan.name || !newLoan.amount) return; setLiabilitiesData(Object.assign({}, liabilitiesData, { loans: (liabilitiesData.loans || []).concat([{ id: uid(), name: newLoan.name, amount: Number(newLoan.amount) || 0, note: newLoan.note }]) })); setNewLoan({ name: "", amount: "", note: "" }); };
+  const removeLoan = (id) => setLiabilitiesData(Object.assign({}, liabilitiesData, { loans: (liabilitiesData.loans || []).filter((a) => a.id !== id) }));
+  const addPay = () => { if (!newPay.name || !newPay.amount) return; setLiabilitiesData(Object.assign({}, liabilitiesData, { payables: (liabilitiesData.payables || []).concat([{ id: uid(), name: newPay.name, amount: Number(newPay.amount) || 0, note: newPay.note }]) })); setNewPay({ name: "", amount: "", note: "" }); };
+  const removePay = (id) => setLiabilitiesData(Object.assign({}, liabilitiesData, { payables: (liabilitiesData.payables || []).filter((a) => a.id !== id) }));
+
+  const rowStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 8, padding: "6px 10px", marginBottom: 4, fontSize: 12 };
+
+  return h(Niche, { style: { marginBottom: 14, border: "1px solid " + C.night } },
+    h(SectionTitle, { eyebrow: "گزارش حرفه‌ای", title: "ترازنامه (دارایی‌ها، بدهی‌ها و سرمایهٔ خالص)" }),
+    h("div", { style: { fontSize: 11.5, color: C.inkSoft, marginBottom: 10, lineHeight: 1.9 } },
+      "این بخش نشون می‌ده کل ارزش کسب‌وکارت چقدره: هرچی داری (دارایی) منهای هرچی بدهکاری (بدهی) = سرمایهٔ خالص واقعی‌ات."
+    ),
+    h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap" } },
+      h("div", { style: { flex: 1, minWidth: 220, background: "#EAF1E4", borderRadius: 10, padding: 12 } },
+        h("div", { style: { fontWeight: 700, fontSize: 13, color: C.sage, marginBottom: 8 } }, "دارایی‌ها (Assets)"),
+        h("div", { style: { fontSize: 12, display: "flex", justifyContent: "space-between", padding: "2px 0" } }, h("span", null, "نقد و موجودی حساب‌ها"), h("b", null, totalBalance)),
+        h("div", { style: { fontSize: 12, display: "flex", justifyContent: "space-between", padding: "2px 0" } }, h("span", null, "دارایی‌های ثابت"), h("b", null, totalFixedAssets)),
+        h("div", { style: { fontSize: 12, display: "flex", justifyContent: "space-between", padding: "2px 0" } }, h("span", null, "موجودی انبار"), h("b", null, totalInventoryValue)),
+        h("div", { style: { fontSize: 12, display: "flex", justifyContent: "space-between", padding: "2px 0" } }, h("span", null, "مطالبات از دیگران"), h("b", null, totalReceivables)),
+        h("div", { style: { borderTop: "1px solid " + C.sage, marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13 } }, h("span", null, "جمع دارایی‌ها"), h("span", null, totalAssets))
+      ),
+      h("div", { style: { flex: 1, minWidth: 220, background: "#F5E2E0", borderRadius: 10, padding: 12 } },
+        h("div", { style: { fontWeight: 700, fontSize: 13, color: C.pomegranate, marginBottom: 8 } }, "بدهی‌ها (Liabilities)"),
+        h("div", { style: { fontSize: 12, display: "flex", justifyContent: "space-between", padding: "2px 0" } }, h("span", null, "وام‌ها"), h("b", null, totalLoans)),
+        h("div", { style: { fontSize: 12, display: "flex", justifyContent: "space-between", padding: "2px 0" } }, h("span", null, "بدهی به دیگران"), h("b", null, totalPayables)),
+        h("div", { style: { borderTop: "1px solid " + C.pomegranate, marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13 } }, h("span", null, "جمع بدهی‌ها"), h("span", null, totalLiabilities)),
+        h("div", { style: { marginTop: 14, paddingTop: 10, borderTop: "2px solid " + C.night, display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 14, color: C.night } }, h("span", null, "سرمایهٔ خالص (Equity)"), h("span", null, netWorth))
+      )
+    ),
+
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", marginTop: 14 }, onClick: () => setOpen(!open) },
+      h("div", { style: { fontWeight: 700, fontSize: 13, color: C.clay } }, "جزئیات دارایی‌ها و بدهی‌ها"),
+      h("span", { style: { fontSize: 16, color: C.inkSoft } }, open ? "▲" : "▼")
+    ),
+
+    open ? h("div", { style: { marginTop: 12 } },
+      h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "دارایی‌های ثابت (ملک، وسیله نقلیه، تجهیزات و ...)"),
+      (assetsData.fixedAssets || []).map((a) => h("div", { key: a.id, style: rowStyle },
+        h("span", null, a.name + " (" + a.category + ") — " + jalaliLabel(new Date(a.date + "T00:00:00"))),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, h("b", null, a.value), h("button", { onClick: () => removeFixed(a.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑"))
+      )),
+      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 } },
+        h("input", { style: inputStyle, placeholder: "نام دارایی", value: newFixed.name, onChange: (e) => setNewFixed(Object.assign({}, newFixed, { name: e.target.value })) }),
+        h("select", { style: inputStyle, value: newFixed.category, onChange: (e) => setNewFixed(Object.assign({}, newFixed, { category: e.target.value })) }, ASSET_CATEGORIES.map((c) => h("option", { key: c }, c))),
+        h(JalaliDateInput, { value: newFixed.date, onChange: (iso) => setNewFixed(Object.assign({}, newFixed, { date: iso })) }),
+        h("input", { style: { ...inputStyle, width: 90 }, placeholder: "ارزش", value: newFixed.value, onChange: (e) => setNewFixed(Object.assign({}, newFixed, { value: e.target.value })) }),
+        h("button", { style: btnStyle, onClick: addFixed }, "+")
+      ),
+
+      h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "ارزش موجودی انبار (تخمینی)"),
+      h("div", { style: { display: "flex", gap: 6, marginBottom: 16 } },
+        h("input", { style: { ...inputStyle, width: 120 }, value: invDraft, onChange: (e) => setInvDraft(e.target.value) }),
+        h("button", { style: btnStyle, onClick: saveInv }, "ذخیره")
+      ),
+
+      h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "مطالبات از دیگران (کسانی که به شما بدهکارن)"),
+      (assetsData.receivables || []).map((a) => h("div", { key: a.id, style: rowStyle },
+        h("span", null, a.name + (a.note ? " — " + a.note : "")),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, h("b", null, a.amount), h("button", { onClick: () => removeRecv(a.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑"))
+      )),
+      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 } },
+        h("input", { style: inputStyle, placeholder: "نام شخص", value: newRecv.name, onChange: (e) => setNewRecv(Object.assign({}, newRecv, { name: e.target.value })) }),
+        h("input", { style: { ...inputStyle, width: 90 }, placeholder: "مبلغ", value: newRecv.amount, onChange: (e) => setNewRecv(Object.assign({}, newRecv, { amount: e.target.value })) }),
+        h("input", { style: inputStyle, placeholder: "یادداشت", value: newRecv.note, onChange: (e) => setNewRecv(Object.assign({}, newRecv, { note: e.target.value })) }),
+        h("button", { style: btnStyle, onClick: addRecv }, "+")
+      ),
+
+      h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "وام‌ها"),
+      (liabilitiesData.loans || []).map((a) => h("div", { key: a.id, style: rowStyle },
+        h("span", null, a.name + (a.note ? " — " + a.note : "")),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, h("b", null, a.amount), h("button", { onClick: () => removeLoan(a.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑"))
+      )),
+      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 } },
+        h("input", { style: inputStyle, placeholder: "نام وام/بانک", value: newLoan.name, onChange: (e) => setNewLoan(Object.assign({}, newLoan, { name: e.target.value })) }),
+        h("input", { style: { ...inputStyle, width: 90 }, placeholder: "مبلغ باقی‌مانده", value: newLoan.amount, onChange: (e) => setNewLoan(Object.assign({}, newLoan, { amount: e.target.value })) }),
+        h("input", { style: inputStyle, placeholder: "یادداشت", value: newLoan.note, onChange: (e) => setNewLoan(Object.assign({}, newLoan, { note: e.target.value })) }),
+        h("button", { style: btnStyle, onClick: addLoan }, "+")
+      ),
+
+      h("div", { style: { fontWeight: 700, fontSize: 12.5, marginBottom: 6 } }, "بدهی به دیگران"),
+      (liabilitiesData.payables || []).map((a) => h("div", { key: a.id, style: rowStyle },
+        h("span", null, a.name + (a.note ? " — " + a.note : "")),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, h("b", null, a.amount), h("button", { onClick: () => removePay(a.id), style: { border: "none", background: "none", cursor: "pointer" } }, "🗑"))
+      )),
+      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+        h("input", { style: inputStyle, placeholder: "نام شخص/طلبکار", value: newPay.name, onChange: (e) => setNewPay(Object.assign({}, newPay, { name: e.target.value })) }),
+        h("input", { style: { ...inputStyle, width: 90 }, placeholder: "مبلغ", value: newPay.amount, onChange: (e) => setNewPay(Object.assign({}, newPay, { amount: e.target.value })) }),
+        h("input", { style: inputStyle, placeholder: "یادداشت", value: newPay.note, onChange: (e) => setNewPay(Object.assign({}, newPay, { note: e.target.value })) }),
+        h("button", { style: btnStyle, onClick: addPay }, "+")
+      )
+    ) : null
+  );
+}
+
 function AccountingTab(props) {
   const finance = props.finance, setFinance = props.setFinance, financeByMonth = props.financeByMonth;
   const incomeByCategory = props.incomeByCategory, expenseByCategory = props.expenseByCategory;
   const accounts = props.accounts, setAccounts = props.setAccounts, balanceByAccount = props.balanceByAccount;
   const incomeCategories = props.incomeCategories, setIncomeCategories = props.setIncomeCategories;
   const expenseCategories = props.expenseCategories, setExpenseCategories = props.setExpenseCategories;
+  const assetsData = props.assetsData, setAssetsData = props.setAssetsData;
+  const liabilitiesData = props.liabilitiesData, setLiabilitiesData = props.setLiabilitiesData;
 
   const blankForm = { date: todayISO(), flow: "income", category: incomeCategories[0], account: accounts[0] || "", amount: "", note: "" };
   const [form, setForm] = useState(blankForm);
@@ -929,6 +1046,14 @@ function AccountingTab(props) {
   const removeEntry = (id) => { setFinance((f) => f.filter((e) => e.id !== id)); if (editingId === id) cancelEdit(); };
   const lastFin = financeByMonth[financeByMonth.length - 1];
   const totalBalance = accounts.reduce((s, a) => s + (balanceByAccount[a] || 0), 0);
+  const totalFixedAssets = (assetsData.fixedAssets || []).reduce((s, a) => s + (Number(a.value) || 0), 0);
+  const totalReceivables = (assetsData.receivables || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const totalInventoryValue = Number(assetsData.inventoryValue) || 0;
+  const totalAssets = totalBalance + totalFixedAssets + totalReceivables + totalInventoryValue;
+  const totalLoans = (liabilitiesData.loans || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const totalPayables = (liabilitiesData.payables || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const totalLiabilities = totalLoans + totalPayables;
+  const netWorth = totalAssets - totalLiabilities;
 
   const saveAccName = (oldName) => {
     const newName = accDraft.trim();
@@ -958,6 +1083,12 @@ function AccountingTab(props) {
       h(KPICard, { emoji: "📉", label: "هزینه " + (lastFin ? lastFin.month : "این ماه"), value: lastFin ? lastFin["هزینه"] : 0, tone: C.pomegranate }),
       h(KPICard, { emoji: "💰", label: "سود خالص", value: lastFin ? (lastFin["درآمد"] - lastFin["هزینه"]) : 0, tone: C.clay })
     ),
+
+    h(BalanceSheetSection, {
+      totalBalance: totalBalance, totalFixedAssets: totalFixedAssets, totalReceivables: totalReceivables, totalInventoryValue: totalInventoryValue, totalAssets: totalAssets,
+      totalLoans: totalLoans, totalPayables: totalPayables, totalLiabilities: totalLiabilities, netWorth: netWorth,
+      assetsData: assetsData, setAssetsData: setAssetsData, liabilitiesData: liabilitiesData, setLiabilitiesData: setLiabilitiesData
+    }),
 
     h(Niche, { style: { marginBottom: 14, border: editingId ? ("1px solid " + C.gold) : undefined } },
       h(SectionTitle, { eyebrow: editingId ? "در حال ویرایش" : "ثبت تراکنش جدید", title: editingId ? "ویرایش تراکنش" : "درآمد یا هزینهٔ جدید" }),
