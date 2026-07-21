@@ -342,6 +342,7 @@ const TABS = [
   { key: "guests", label: "مهمان‌ها", emoji: "👤" },
   { key: "maintenance", label: "تعمیرات", emoji: "🔧" },
   { key: "accounting", label: "حسابداری", emoji: "🧮" },
+  { key: "reports", label: "گزارش مالی", emoji: "📊" },
   { key: "inventory", label: "انبار", emoji: "📦" },
   { key: "carbon", label: "ردپای کربن", emoji: "🌿" },
   { key: "events", label: "رویدادها", emoji: "🎉" },
@@ -483,6 +484,7 @@ function App() {
       tab === "guests" ? h(GuestsTab, { guests: guests, setGuests: setGuests, stays: stays, setStays: setStays, rooms: rooms, addFinanceEntry: addFinanceEntry, accounts: accounts }) : null,
       tab === "maintenance" ? h(MaintenanceTab, { equipment: equipment, setEquipment: setEquipment, addFinanceEntry: addFinanceEntry, accounts: accounts, equipStatus: equipStatus }) : null,
       tab === "accounting" ? h(AccountingTab, { finance: finance, setFinance: setFinance, financeByMonth: financeByMonth, incomeByCategory: incomeByCategory, expenseByCategory: expenseByCategory, accounts: accounts, setAccounts: setAccounts, balanceByAccount: balanceByAccount, incomeCategories: incomeCategories, setIncomeCategories: setIncomeCategories, expenseCategories: expenseCategories, setExpenseCategories: setExpenseCategories, assetsData: assetsData, setAssetsData: setAssetsData, liabilitiesData: liabilitiesData, setLiabilitiesData: setLiabilitiesData }) : null,
+      tab === "reports" ? h(ReportTab, { finance: finance, accounts: accounts }) : null,
       tab === "inventory" ? h(InventoryTab, { inventory: inventory, setInventory: setInventory, addFinanceEntry: addFinanceEntry, accounts: accounts, expenseCategories: expenseCategories }) : null,
       tab === "carbon" ? h(CarbonTab, { carbon: carbon, setCarbon: setCarbon, carbonSeries: carbonSeries }) : null,
       tab === "events" ? h(EventsTab, { events: events, setEvents: setEvents, accounts: accounts }) : null,
@@ -496,57 +498,37 @@ function ReservationsTab(props) {
   const [editRoom, setEditRoom] = useState(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [logAccount, setLogAccount] = useState(accounts[0] || "");
-  const [weekStart, setWeekStart] = useState(() => getSaturday(new Date()));
-  const [openStays, setOpenStays] = useState({}); // roomId -> { checkIn, guests, name, phone, notes }
-  const [editing, setEditing] = useState(null); // { stay, roomName } for finalized stays
+  const [editing, setEditing] = useState(null); // { stay, roomName } for the reservation being edited
   const [editForm, setEditForm] = useState({ guests: "1", name: "", phone: "", notes: "" });
   const [bulkForm, setBulkForm] = useState({ checkIn: "", checkOut: "", guests: "2", name: "", phone: "", notes: "", roomId: "" });
   const [bulkMsg, setBulkMsg] = useState("");
-
-  const weekDates = useMemo(() => {
-    const arr = [];
-    for (let i = 0; i < 7; i++) { const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); arr.push(d); }
-    return arr;
-  }, [weekStart]);
-
-  const stayAt = (roomId, dateISO) => stays.find((s) => s.roomId === roomId && dateISO >= s.checkIn && dateISO < s.checkOut);
-  const checkoutHereFrom = (roomId, dateISO) => stays.find((s) => s.roomId === roomId && s.checkOut === dateISO);
-
-  const weeklyTotal = useMemo(() => {
-    let s = 0;
-    rooms.forEach((r) => weekDates.forEach((d) => { const st = stayAt(r.id, isoLocal(d)); if (st) s += (Number(st.guests) || 0) * r.pricePerPerson; }));
-    return s;
-    // eslint-disable-next-line
-  }, [rooms, stays, weekDates]);
+  const [showPast, setShowPast] = useState(false);
 
   const savePrice = (id) => { setRooms((rs) => rs.map((r) => r.id === id ? Object.assign({}, r, { pricePerPerson: Number(priceDraft) || r.pricePerPerson }) : r)); setEditRoom(null); };
-  const logToAccounting = () => { if (weeklyTotal > 0) addFinanceEntry({ date: todayISO(), flow: "income", category: "اقامت", account: logAccount, amount: weeklyTotal, note: "درآمد رزرو هفتگی" }); };
 
   const findGuestByPhone = (phone) => {
     const p = (phone || "").trim();
     if (!p) return null;
     return guests.find((g) => g.phone === p) || null;
   };
+
+  // Fix: guests used to be registered in the directory only when a phone number
+  // was entered. Now a guest is still saved if we at least have a name, and
+  // guests without a phone are matched/updated by name instead of getting lost.
   const upsertGuestDirectory = (guestData, roomName, dateISO) => {
     const phone = (guestData.phone || "").trim();
-    if (!phone) return;
+    const name = (guestData.name || "").trim();
+    if (!phone && !name) return;
     const visit = { date: dateISO, roomName: roomName, guests: Number(guestData.guests) || 0 };
     setGuests((gs) => {
-      const idx = gs.findIndex((g) => g.phone === phone);
-      if (idx === -1) return gs.concat([{ id: uid(), name: guestData.name || "بدون نام", phone: phone, notes: guestData.notes || "", visits: [visit] }]);
+      const idx = phone ? gs.findIndex((g) => g.phone === phone) : gs.findIndex((g) => !g.phone && g.name === name);
+      if (idx === -1) return gs.concat([{ id: uid(), name: name || "بدون نام", phone: phone, notes: guestData.notes || "", visits: [visit] }]);
       const updated = gs.slice();
       const g = updated[idx];
-      updated[idx] = Object.assign({}, g, { name: guestData.name || g.name, notes: guestData.notes || g.notes, visits: (g.visits || []).concat([visit]) });
+      updated[idx] = Object.assign({}, g, { name: name || g.name, notes: guestData.notes || g.notes, visits: (g.visits || []).concat([visit]) });
       return updated;
     });
   };
-
-  const updateOpenField = (roomId, field, value) => setOpenStays((o) => Object.assign({}, o, { [roomId]: Object.assign({}, o[roomId], { [field]: value }) }));
-  const autofillOpenFromPhone = (roomId) => {
-    const known = findGuestByPhone(openStays[roomId].phone);
-    if (known) updateOpenField(roomId, "name", known.name), updateOpenField(roomId, "notes", known.notes || "");
-  };
-  const cancelOpenStay = (roomId) => setOpenStays((o) => { const n = Object.assign({}, o); delete n[roomId]; return n; });
 
   const bulkBook = () => {
     if (!bulkForm.checkIn || !bulkForm.checkOut || bulkForm.checkOut <= bulkForm.checkIn) { setBulkMsg("تاریخ ورود و خروج را درست وارد کنید."); return; }
@@ -559,7 +541,7 @@ function ReservationsTab(props) {
     });
     if (newStays.length) {
       setStays((s) => s.concat(newStays));
-      if (bulkForm.phone) upsertGuestDirectory(bulkForm, "کل اقامتگاه", bulkForm.checkIn);
+      upsertGuestDirectory(bulkForm, "کل اقامتگاه", bulkForm.checkIn);
     }
     setBulkMsg(skipped.length ? ("رزرو برای " + newStays.length + " اتاق ثبت شد. این اتاق‌ها از قبل رزرو بودن و رد شدند: " + skipped.join("، ")) : ("رزرو کل اقامتگاه (" + newStays.length + " اتاق) با موفقیت ثبت شد."));
     setBulkForm({ checkIn: "", checkOut: "", guests: "2", name: "", phone: "", notes: "", roomId: "" });
@@ -574,49 +556,46 @@ function ReservationsTab(props) {
     if (conflict) { setBulkMsg("اتاق " + room.name + " در این بازه از قبل رزرو است."); return; }
     const stay = { id: uid(), roomId: room.id, checkIn: bulkForm.checkIn, checkOut: bulkForm.checkOut, guests: Number(bulkForm.guests) || room.capacity, name: bulkForm.name, phone: bulkForm.phone, notes: bulkForm.notes, settled: false };
     setStays((s) => s.concat([stay]));
-    if (bulkForm.phone) upsertGuestDirectory(bulkForm, room.name, bulkForm.checkIn);
+    upsertGuestDirectory(bulkForm, room.name, bulkForm.checkIn);
     setBulkMsg("رزرو اتاق " + room.name + " با موفقیت ثبت شد.");
     setBulkForm({ checkIn: "", checkOut: "", guests: "2", name: "", phone: "", notes: "", roomId: bulkForm.roomId });
   };
 
-  const onCellClick = (room, d) => {
-    const dateISO = isoLocal(d);
-    const occupied = stayAt(room.id, dateISO);
-    if (occupied) {
-      setEditing({ stay: occupied, roomName: room.name });
-      setEditForm({ guests: String(occupied.guests || 1), name: occupied.name || "", phone: occupied.phone || "", notes: occupied.notes || "" });
-      return;
-    }
-    const open = openStays[room.id];
-    if (open) {
-      if (open.checkIn === dateISO) { cancelOpenStay(room.id); return; }
-      if (dateISO > open.checkIn) {
-        const stay = { id: uid(), roomId: room.id, checkIn: open.checkIn, checkOut: dateISO, guests: Number(open.guests) || 1, name: open.name, phone: open.phone, notes: open.notes, settled: false };
-        setStays((s) => s.concat([stay]));
-        upsertGuestDirectory(open, room.name, open.checkIn);
-        cancelOpenStay(room.id);
-        return;
-      }
-      setOpenStays((o) => Object.assign({}, o, { [room.id]: Object.assign({}, open, { checkIn: dateISO }) }));
-      return;
-    }
-    setOpenStays((o) => Object.assign({}, o, { [room.id]: { checkIn: dateISO, guests: "1", name: "", phone: "", notes: "" } }));
+  const startEditStay = (s, roomName) => {
+    setEditing({ stay: s, roomName: roomName });
+    setEditForm({ guests: String(s.guests || 1), name: s.name || "", phone: s.phone || "", notes: s.notes || "" });
   };
-
   const saveEditStay = () => {
     setStays((s) => s.map((x) => x.id === editing.stay.id ? Object.assign({}, x, { guests: Number(editForm.guests) || 1, name: editForm.name, phone: editForm.phone, notes: editForm.notes }) : x));
     upsertGuestDirectory(editForm, editing.roomName, editing.stay.checkIn);
     setEditing(null);
   };
   const cancelFinalizedStay = () => { setStays((s) => s.filter((x) => x.id !== editing.stay.id)); setEditing(null); };
+  const quickDeleteStay = (id) => { setStays((s) => s.filter((x) => x.id !== id)); if (editing && editing.stay.id === id) setEditing(null); };
+  const logStayIncome = (s, room) => {
+    const nights = Math.max(1, Math.round((new Date(s.checkOut + "T00:00:00") - new Date(s.checkIn + "T00:00:00")) / 86400000));
+    const amount = (Number(s.guests) || 0) * nights * (room ? room.pricePerPerson : 0);
+    if (amount > 0) addFinanceEntry({ date: todayISO(), flow: "income", category: "اقامت", account: logAccount, amount: amount, note: "درآمد اقامت " + (s.name || "") });
+    setStays((ss) => ss.map((x) => x.id === s.id ? Object.assign({}, x, { settled: true }) : x));
+  };
 
-  const weekLabel = jalaliLabel(weekDates[0]) + " تا " + jalaliLabel(weekDates[6]);
-  const openRoomIds = Object.keys(openStays);
+  const today = todayISO();
+  const stayList = useMemo(() => {
+    return stays.map((s) => Object.assign({}, s, { room: rooms.find((r) => r.id === s.roomId) }))
+      .filter((s) => showPast || s.checkOut >= today)
+      .sort((a, b) => a.checkIn < b.checkIn ? 1 : -1);
+    // eslint-disable-next-line
+  }, [stays, rooms, showPast]);
+
+  const knownGuest = findGuestByPhone(bulkForm.phone);
+  const mobileInput = Object.assign({}, inputStyle, { width: "100%", padding: "10px 11px", fontSize: 13.5 });
+  const gridWrap = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 };
+  const fieldLabelStyle = { fontSize: 10.5, color: C.inkSoft, marginBottom: 3 };
 
   return h(React.Fragment, null,
     h(Niche, { style: { marginBottom: 14 } },
       h(SectionTitle, { eyebrow: "قیمت‌گذاری", title: "اتاق‌ها (قیمت هر نفر)" }),
-      rooms.map((r) => h("div", { key: r.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "8px 12px", marginBottom: 6 } },
+      rooms.map((r) => h("div", { key: r.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "8px 12px", marginBottom: 6, flexWrap: "wrap", gap: 6 } },
         h("div", null,
           h("div", { style: { fontWeight: 600, fontSize: 13 } }, r.name),
           h("div", { style: { fontSize: 11, color: C.inkSoft } }, (r.type === "master" ? "مستر" : "غیرمستر") + " — ظرفیت " + r.capacity + " نفر")
@@ -629,101 +608,93 @@ function ReservationsTab(props) {
           : h("button", { onClick: () => { setEditRoom(r.id); setPriceDraft(String(r.pricePerPerson)); }, style: { border: "none", background: "none", cursor: "pointer", fontWeight: 700, color: C.clay } }, r.pricePerPerson + " ✎")
       ))
     ),
+
     h(Niche, { style: { marginBottom: 14 } },
-      h(SectionTitle, { eyebrow: "رزرو با فرم", title: "برای یک بازهٔ تاریخ — کل اقامتگاه یا فقط یک اتاق" }),
-      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-end" } },
+      h(SectionTitle, { eyebrow: "رزرو جدید", title: "ثبت سریع رزرو — کل اقامتگاه یا یک اتاق" }),
+      h("div", { style: gridWrap },
+        h("div", null, h("div", { style: fieldLabelStyle }, "اتاق (خالی = کل اقامتگاه)"),
+          h("select", { style: mobileInput, value: bulkForm.roomId, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { roomId: e.target.value })) },
+            h("option", { value: "" }, "— کل اقامتگاه —"),
+            rooms.map((r) => h("option", { key: r.id, value: r.id }, r.name))
+          )),
+        h("div", null, h("div", { style: fieldLabelStyle }, "نفر در هر اتاق"),
+          h("input", { style: mobileInput, inputMode: "numeric", value: bulkForm.guests, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { guests: e.target.value })) }))
+      ),
+      h("div", { style: Object.assign({}, gridWrap, { marginTop: 8 }) },
         h(JalaliDateInput, { label: "ورود", value: bulkForm.checkIn, onChange: (iso) => setBulkForm((f) => Object.assign({}, f, { checkIn: iso })) }),
-        h(JalaliDateInput, { label: "خروج", value: bulkForm.checkOut, onChange: (iso) => setBulkForm((f) => Object.assign({}, f, { checkOut: iso })) }),
-        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "نفر در هر اتاق"), h("input", { style: { ...inputStyle, width: 70 }, value: bulkForm.guests, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { guests: e.target.value })) })),
-        h("div", null, h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "اتاق (برای رزرو تکی)"), h("select", { style: inputStyle, value: bulkForm.roomId, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { roomId: e.target.value })) },
-          h("option", { value: "" }, "— انتخاب کنید —"),
-          rooms.map((r) => h("option", { key: r.id, value: r.id }, r.name))
-        ))
+        h(JalaliDateInput, { label: "خروج", value: bulkForm.checkOut, onChange: (iso) => setBulkForm((f) => Object.assign({}, f, { checkOut: iso })) })
       ),
-      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 } },
-        h("input", { style: inputStyle, placeholder: "نام مهمان / گروه", value: bulkForm.name, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { name: e.target.value })) }),
-        h("input", { style: inputStyle, placeholder: "شماره تماس", value: bulkForm.phone, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { phone: e.target.value })) })
+      h("div", { style: Object.assign({}, gridWrap, { marginTop: 8 }) },
+        h("div", null, h("div", { style: fieldLabelStyle }, "نام مهمان / گروه"), h("input", { style: mobileInput, placeholder: "نام مهمان / گروه", value: bulkForm.name, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { name: e.target.value })) })),
+        h("div", null, h("div", { style: fieldLabelStyle }, "شماره تماس"), h("input", { style: mobileInput, inputMode: "tel", placeholder: "شماره تماس (اختیاری)", value: bulkForm.phone, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { phone: e.target.value })) }))
       ),
-      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 6, minHeight: 40, fontFamily: "inherit" }, placeholder: "یادداشت", value: bulkForm.notes, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { notes: e.target.value })) }),
-      h("div", { style: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" } },
-        h("button", { style: btnStyle, onClick: bulkBook }, "رزرو همهٔ اتاق‌ها"),
-        h("button", { style: Object.assign({}, btnStyle, { background: C.sage }), onClick: bookSingleRoom }, "رزرو همین یک اتاق")
+      knownGuest ? h("div", { style: { fontSize: 11, color: C.sage, marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+        h("span", null, "📇 این مهمان قبلاً " + (knownGuest.visits ? knownGuest.visits.length : 0) + " بار اومده" + (knownGuest.name ? " (" + knownGuest.name + ")" : "") + "."),
+        h("button", { onClick: () => setBulkForm(Object.assign({}, bulkForm, { name: knownGuest.name, notes: knownGuest.notes || bulkForm.notes })), style: { border: "none", background: "none", color: C.clay, cursor: "pointer", fontWeight: 700 } }, "پر کن")
+      ) : null,
+      h("div", { style: { marginTop: 8 } },
+        h("div", { style: fieldLabelStyle }, "یادداشت"),
+        h("textarea", { style: Object.assign({}, mobileInput, { minHeight: 44, fontFamily: "inherit" }), placeholder: "یادداشت", value: bulkForm.notes, onChange: (e) => setBulkForm(Object.assign({}, bulkForm, { notes: e.target.value })) })
       ),
-      bulkMsg ? h("div", { style: { fontSize: 11.5, color: C.sage, marginTop: 6 } }, bulkMsg) : null,
-      h("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 4 } }, "اگه اتاقی از قبل توی این بازه رزرو باشه، خودش رد می‌شه و بهت خبر می‌ده کدوم‌ها.")
+      h("div", { style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } },
+        h("button", { style: Object.assign({}, btnStyle, { flex: "1 1 140px" }), onClick: bookSingleRoom }, "رزرو همین یک اتاق"),
+        h("button", { style: Object.assign({}, btnStyle, { flex: "1 1 140px", background: C.sage }), onClick: bulkBook }, "رزرو کل اقامتگاه")
+      ),
+      bulkMsg ? h("div", { style: { fontSize: 11.5, color: C.sage, marginTop: 8 } }, bulkMsg) : null,
+      h("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 4 } }, "برای رزرو یک اتاق خاص، اول از منو انتخابش کن. اگر اتاقی از قبل توی این بازه رزرو باشه، بهت خبر می‌ده.")
     ),
+
     h(Niche, null,
-      h(SectionTitle, { eyebrow: "تقویم ورود/خروج", title: "کلیک اول = ورود (فرم زیر باز می‌شود)، کلیک دوم روی روز بعدی = خروج" }),
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 } },
-        h("button", { style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 11 }), onClick: () => setWeekStart((w) => { const n = new Date(w); n.setDate(w.getDate() - 7); return n; }) }, "◀ هفتهٔ قبل"),
-        h("div", { style: { fontSize: 12.5, fontWeight: 700, color: C.ink } }, weekLabel),
-        h("button", { style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 11 }), onClick: () => setWeekStart((w) => { const n = new Date(w); n.setDate(w.getDate() + 7); return n; }) }, "هفتهٔ بعد ▶")
-      ),
-      h("div", { style: { overflowX: "auto" } },
-        h("table", { style: { borderCollapse: "collapse", width: "100%", fontSize: 12 } },
-          h("thead", null, h("tr", null, h("th", { style: { padding: 6 } }, "اتاق"), weekDates.map((d, i) => h("th", { key: i, style: { padding: 6, color: C.inkSoft, fontWeight: 500 } }, DAYS[i] + " – " + jalaliLabel(d))))),
-          h("tbody", null, rooms.map((r) => h("tr", { key: r.id },
-            h("td", { style: { padding: 6, fontWeight: 600 } }, r.name),
-            weekDates.map((d, di) => {
-              const dateISO = isoLocal(d);
-              const stay = stayAt(r.id, dateISO);
-              const departing = checkoutHereFrom(r.id, dateISO);
-              const open = openStays[r.id] && openStays[r.id].checkIn === dateISO;
-              const lines = [];
-              if (departing) lines.push(h("div", { key: "out", style: { color: C.pomegranate, fontWeight: 700 } }, "خروج " + (departing.name ? departing.name.split(" ")[0] : "")));
-              if (stay) lines.push(h("div", { key: "in", style: { color: "#fff", fontWeight: 700 } }, (stay.checkIn === dateISO ? "ورود " : "") + stay.guests + " نفر" + (stay.name ? " — " + stay.name : "")));
-              else if (open) lines.push(h("div", { key: "pending", style: { color: "#fff" } }, "ورود ✓"));
-              else if (!departing) lines.push(h("div", { key: "empty" }, "خالی"));
-              let bg = C.sandDark;
-              if (stay) bg = colorForStay(stay.id); else if (open) bg = C.gold;
-              return h("td", { key: di, style: { padding: 4, textAlign: "center" } },
-                h("button", { onClick: () => onCellClick(r, d), style: { border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 4px", width: 84, minHeight: 42, background: bg, color: C.inkSoft, fontSize: 9.5, lineHeight: 1.35, wordBreak: "break-word" } }, lines)
-              );
-            })
-          )))
-        )
-      ),
-      h("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 12, flexWrap: "wrap", gap: 8 } },
-        h("div", { style: { fontWeight: 700, color: C.clay, fontSize: 12.5 } }, "درآمد تخمینی این هفته: " + weeklyTotal),
-        h("div", { style: { display: "flex", gap: 6 } },
-          h("select", { style: inputStyle, value: logAccount, onChange: (e) => setLogAccount(e.target.value) }, accounts.map((a) => h("option", { key: a }, a))),
-          h("button", { style: btnStyle, onClick: logToAccounting }, "ثبت در حسابداری")
-        )
+      h(SectionTitle, { eyebrow: "رزروها", title: showPast ? "همهٔ رزروها" : "رزروهای فعال و آینده" }),
+      h("button", { onClick: () => setShowPast(!showPast), style: { border: "none", background: "none", cursor: "pointer", color: C.clay, fontSize: 11.5, fontWeight: 600, marginBottom: 10, padding: 0 } }, showPast ? "فقط فعال/آینده" : "نمایش رزروهای گذشته هم"),
+      stayList.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "رزروی برای نمایش نیست.") : null,
+      stayList.map((s) => {
+        const nights = Math.max(1, Math.round((new Date(s.checkOut + "T00:00:00") - new Date(s.checkIn + "T00:00:00")) / 86400000));
+        const isPast = s.checkOut < today;
+        const isCurrent = !isPast && s.checkIn <= today;
+        const statusText = isPast ? "پایان‌یافته" : (isCurrent ? "در حال اقامت" : "آینده");
+        const statusTone = isPast ? "planned" : (isCurrent ? "income" : "due");
+        return h("div", { key: s.id, style: { background: C.sand, borderRadius: 10, padding: "10px 12px", marginBottom: 8, borderRight: "4px solid " + colorForStay(s.id) } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" } },
+            h("div", null,
+              h("div", { style: { fontWeight: 700, fontSize: 13.5 } }, (s.room ? s.room.name : "اتاق حذف‌شده") + (s.name ? " — " + s.name : "")),
+              h("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 2 } }, jalaliLabel(new Date(s.checkIn + "T00:00:00")) + " تا " + jalaliLabel(new Date(s.checkOut + "T00:00:00")) + " (" + nights + " شب) — " + s.guests + " نفر"),
+              s.phone ? h("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 2 } }, "📞 " + s.phone) : null
+            ),
+            h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 } },
+              h(Pill, { text: statusText, tone: statusTone }),
+              h(Pill, { text: s.settled ? "تسویه‌شده" : "تسویه‌نشده", tone: s.settled ? "done" : "due" })
+            )
+          ),
+          s.notes ? h("div", { style: { fontSize: 11.5, marginTop: 6, background: "#fff", borderRadius: 8, padding: 7 } }, "📝 " + s.notes) : null,
+          h("div", { style: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" } },
+            h("button", { onClick: () => startEditStay(s, s.room ? s.room.name : ""), style: { border: "none", background: "none", cursor: "pointer", fontSize: 11.5, color: C.clay, fontWeight: 600 } }, "✎ ویرایش"),
+            !s.settled ? h("button", { onClick: () => logStayIncome(s, s.room), style: { border: "none", background: "none", cursor: "pointer", fontSize: 11.5, color: C.sage, fontWeight: 600 } }, "💰 ثبت درآمد در حسابداری") : null,
+            h("button", { onClick: () => quickDeleteStay(s.id), style: { border: "none", background: "none", cursor: "pointer", fontSize: 11.5, color: C.pomegranate, fontWeight: 600 } }, "🗑 لغو رزرو")
+          )
+        );
+      }),
+      h("div", { style: { display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" } },
+        h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "حساب برای ثبت درآمد:"),
+        h("select", { style: inputStyle, value: logAccount, onChange: (e) => setLogAccount(e.target.value) }, accounts.map((a) => h("option", { key: a }, a)))
       )
     ),
 
-    openRoomIds.map((rid) => {
-      const room = rooms.find((r) => r.id === rid);
-      const o = openStays[rid];
-      const known = findGuestByPhone(o.phone);
-      return h(Niche, { key: rid, style: { marginTop: 14, border: "1px solid " + C.gold } },
-        h(SectionTitle, { eyebrow: (room ? room.name : "") + " — ورود: " + jalaliLabel(new Date(o.checkIn + "T00:00:00")), title: "مشخصات مهمان (هنوز خروج مشخص نشده — روی یک روز دیگر بزنید)" }),
-        h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-          h("input", { style: Object.assign({}, inputStyle, { width: 70 }), placeholder: "تعداد نفر", value: o.guests, onChange: (e) => updateOpenField(rid, "guests", e.target.value) }),
-          h("input", { style: inputStyle, placeholder: "نام مهمان", value: o.name, onChange: (e) => updateOpenField(rid, "name", e.target.value) }),
-          h("input", { style: inputStyle, placeholder: "شماره تماس", value: o.phone, onChange: (e) => updateOpenField(rid, "phone", e.target.value) }),
-          known ? h("button", { onClick: () => autofillOpenFromPhone(rid), style: { ...btnStyle, background: C.sage } }, "مهمان قبلی — پر کن") : null
-        ),
-        known ? h("div", { style: { fontSize: 11, color: C.sage, marginTop: 6 } }, "این مهمان قبلاً " + (known.visits || []).length + " بار اومده.") : null,
-        h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات", value: o.notes, onChange: (e) => updateOpenField(rid, "notes", e.target.value) }),
-        h("div", { style: { display: "flex", gap: 6, marginTop: 10 } },
-          h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: () => cancelOpenStay(rid) }, "انصراف از این ورود")
-        )
-      );
-    }),
-
-    editing ? h(Niche, { style: { marginTop: 14 } },
+    editing ? h(Niche, { style: { marginTop: 14, border: "1px solid " + C.gold } },
       h(SectionTitle, {
         eyebrow: editing.roomName + " — " + jalaliLabel(new Date(editing.stay.checkIn + "T00:00:00")) + " تا " + jalaliLabel(new Date(editing.stay.checkOut + "T00:00:00")),
-        title: "جزئیات رزرو"
+        title: "ویرایش رزرو"
       }),
-      h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-        h("input", { style: Object.assign({}, inputStyle, { width: 70 }), placeholder: "تعداد نفر", value: editForm.guests, onChange: (e) => setEditForm(Object.assign({}, editForm, { guests: e.target.value })) }),
-        h("input", { style: inputStyle, placeholder: "نام مهمان", value: editForm.name, onChange: (e) => setEditForm(Object.assign({}, editForm, { name: e.target.value })) }),
-        h("input", { style: inputStyle, placeholder: "شماره تماس", value: editForm.phone, onChange: (e) => setEditForm(Object.assign({}, editForm, { phone: e.target.value })) })
+      h("div", { style: gridWrap },
+        h("div", null, h("div", { style: fieldLabelStyle }, "تعداد نفر"), h("input", { style: mobileInput, inputMode: "numeric", value: editForm.guests, onChange: (e) => setEditForm(Object.assign({}, editForm, { guests: e.target.value })) })),
+        h("div", null, h("div", { style: fieldLabelStyle }, "نام مهمان"), h("input", { style: mobileInput, value: editForm.name, onChange: (e) => setEditForm(Object.assign({}, editForm, { name: e.target.value })) })),
+        h("div", null, h("div", { style: fieldLabelStyle }, "شماره تماس"), h("input", { style: mobileInput, inputMode: "tel", value: editForm.phone, onChange: (e) => setEditForm(Object.assign({}, editForm, { phone: e.target.value })) }))
       ),
-      h("textarea", { style: { ...inputStyle, width: "100%", marginTop: 8, minHeight: 50, fontFamily: "inherit" }, placeholder: "علاقه‌مندی‌ها و نکات", value: editForm.notes, onChange: (e) => setEditForm(Object.assign({}, editForm, { notes: e.target.value })) }),
-      h("div", { style: { display: "flex", gap: 6, marginTop: 10 } },
+      h("div", { style: { marginTop: 8 } },
+        h("div", { style: fieldLabelStyle }, "علاقه‌مندی‌ها و نکات"),
+        h("textarea", { style: Object.assign({}, mobileInput, { minHeight: 50, fontFamily: "inherit" }), value: editForm.notes, onChange: (e) => setEditForm(Object.assign({}, editForm, { notes: e.target.value })) })
+      ),
+      h("div", { style: { display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" } },
         h("button", { style: btnStyle, onClick: saveEditStay }, "ذخیره تغییرات"),
         h("button", { style: Object.assign({}, btnStyle, { background: C.pomegranate }), onClick: cancelFinalizedStay }, "لغو این رزرو"),
         h("button", { style: Object.assign({}, btnStyle, { background: C.inkSoft }), onClick: () => setEditing(null) }, "بستن")
@@ -1007,6 +978,204 @@ function BalanceSheetSection(props) {
         h("input", { style: inputStyle, placeholder: "یادداشت", value: newPay.note, onChange: (e) => setNewPay(Object.assign({}, newPay, { note: e.target.value })) }),
         h("button", { style: btnStyle, onClick: addPay }, "+")
       )
+    ) : null
+  );
+}
+
+function shiftJalaliMonth(key, delta) {
+  const parts = key.split("-");
+  let jy = Number(parts[0]), jm = Number(parts[1]) + delta;
+  while (jm > 12) { jm -= 12; jy += 1; }
+  while (jm < 1) { jm += 12; jy -= 1; }
+  return jy + "-" + jm;
+}
+function monthKeyLabel(key) {
+  const p = key.split("-");
+  return MONTHS[Number(p[1]) - 1] + " " + p[0];
+}
+function weekdayName(d) { return DAYS[(d.getDay() + 1) % 7]; }
+const REPORT_COLORS = ["#2B3560", "#6B7A57", "#B65C38", "#C9A227", "#8E2A3B", "#4E6E8E", "#8FA073", "#A6673D"];
+function colorForCategory(name) { return REPORT_COLORS[strHash(name) % REPORT_COLORS.length]; }
+function fmtN(n) { return (Number(n) || 0).toLocaleString("fa-IR"); }
+
+function DonutChart(props) {
+  const data = props.data, size = props.size || 220;
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const strokeW = size * 0.22;
+  const r = (size - strokeW) / 2;
+  const cx = size / 2, cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+  let offsetAcc = 0;
+  const parts = [];
+  if (total > 0) {
+    data.filter((d) => d.value > 0).forEach((d) => {
+      const frac = d.value / total;
+      const dash = frac * circumference;
+      parts.push(h("circle", {
+        key: d.label, cx: cx, cy: cy, r: r, fill: "none", stroke: d.color, strokeWidth: strokeW,
+        strokeDasharray: dash + " " + (circumference - dash),
+        strokeDashoffset: -offsetAcc,
+        transform: "rotate(-90 " + cx + " " + cy + ")"
+      }));
+      if (frac > 0.045) {
+        const midFrac = (offsetAcc + dash / 2) / circumference;
+        const angle = (midFrac * 360 - 90) * Math.PI / 180;
+        const tx = cx + Math.cos(angle) * r;
+        const ty = cy + Math.sin(angle) * r;
+        parts.push(h("text", { key: d.label + "-t", x: tx, y: ty, fill: "#fff", fontSize: size * 0.052, fontWeight: 700, textAnchor: "middle", dominantBaseline: "middle" }, Math.round(frac * 100) + "%"));
+      }
+      offsetAcc += dash;
+    });
+  } else {
+    parts.push(h("circle", { key: "empty", cx: cx, cy: cy, r: r, fill: "none", stroke: C.sandDark, strokeWidth: strokeW }));
+  }
+  return h("svg", { viewBox: "0 0 " + size + " " + size, style: { width: "100%", maxWidth: size, height: "auto", display: "block", margin: "0 auto" } }, parts);
+}
+
+function ReportTab(props) {
+  const finance = props.finance, accounts = props.accounts;
+  const [sub, setSub] = useState("stats"); // stats | categories | sources
+  const [monthKey, setMonthKey] = useState(() => jalaliMonthKeyFromDate(todayISO()).key);
+  const [catFlow, setCatFlow] = useState("income");
+
+  const monthEntries = useMemo(() => finance.filter((e) => jalaliMonthKeyFromDate(e.date || todayISO()).key === monthKey), [finance, monthKey]);
+  const monthIncome = monthEntries.filter((e) => e.flow === "income").reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const monthExpense = monthEntries.filter((e) => e.flow === "expense").reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const monthNet = monthIncome - monthExpense;
+
+  const catTotal = monthEntries.filter((e) => e.flow === catFlow).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const catMap = {};
+  monthEntries.filter((e) => e.flow === catFlow).forEach((e) => { catMap[e.category] = (catMap[e.category] || 0) + (Number(e.amount) || 0); });
+  const catRows = Object.keys(catMap).map((c) => ({ label: c, value: catMap[c], color: colorForCategory(c) })).sort((a, b) => b.value - a.value);
+
+  const last3Keys = [shiftJalaliMonth(monthKey, -2), shiftJalaliMonth(monthKey, -1), monthKey];
+  const trendData = last3Keys.map((k) => {
+    const entries = finance.filter((e) => jalaliMonthKeyFromDate(e.date || todayISO()).key === k);
+    return {
+      month: monthKeyLabel(k),
+      "درآمد": entries.filter((e) => e.flow === "income").reduce((s, e) => s + (Number(e.amount) || 0), 0),
+      "هزینه": entries.filter((e) => e.flow === "expense").reduce((s, e) => s + (Number(e.amount) || 0), 0)
+    };
+  });
+
+  const byDay = {};
+  monthEntries.forEach((e) => { (byDay[e.date] || (byDay[e.date] = [])).push(e); });
+  const dayKeys = Object.keys(byDay).sort().reverse();
+
+  const sourceMap = {};
+  accounts.forEach((a) => { sourceMap[a] = { income: 0, expense: 0 }; });
+  monthEntries.forEach((e) => {
+    if (!e.account) return;
+    if (!sourceMap[e.account]) sourceMap[e.account] = { income: 0, expense: 0 };
+    sourceMap[e.account][e.flow === "income" ? "income" : "expense"] += Number(e.amount) || 0;
+  });
+
+  const subTabs = [
+    { key: "stats", label: "آمار" },
+    { key: "categories", label: "دسته‌بندی" },
+    { key: "sources", label: "منابع" }
+  ];
+
+  return h(React.Fragment, null,
+    h("div", { style: { display: "flex", gap: 6, marginBottom: 14, background: C.card, borderRadius: 12, padding: 5, border: "1px solid " + C.sandDark } },
+      subTabs.map((t) => h("button", {
+        key: t.key, onClick: () => setSub(t.key),
+        style: { flex: 1, border: "none", borderRadius: 9, padding: "8px 6px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: sub === t.key ? C.night : "transparent", color: sub === t.key ? C.gold : C.inkSoft }
+      }, t.label))
+    ),
+
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+      h("button", { onClick: () => setMonthKey((k) => shiftJalaliMonth(k, -1)), style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 12 }) }, "◀"),
+      h("div", { style: { fontSize: 13.5, fontWeight: 700, color: C.ink } }, monthKeyLabel(monthKey)),
+      h("button", { onClick: () => setMonthKey((k) => shiftJalaliMonth(k, 1)), style: Object.assign({}, btnStyle, { padding: "5px 10px", fontSize: 12 }) }, "▶")
+    ),
+
+    sub === "categories" ? h(Niche, { style: { marginBottom: 14 } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 } },
+        h("div", { style: { fontSize: 19, fontWeight: 700, color: catFlow === "income" ? C.sage : C.pomegranate } }, fmtN(catTotal) + " ریال"),
+        h("div", { style: { display: "flex", gap: 6 } },
+          h("button", { onClick: () => setCatFlow("income"), style: { border: catFlow === "income" ? "none" : "1px solid " + C.sandDark, background: catFlow === "income" ? C.night : "#fff", color: catFlow === "income" ? C.gold : C.inkSoft, fontWeight: 700, fontSize: 12, padding: "8px 14px", borderRadius: 8, cursor: "pointer" } }, "درآمد ماه"),
+          h("button", { onClick: () => setCatFlow("expense"), style: { border: catFlow === "expense" ? "none" : "1px solid " + C.sandDark, background: catFlow === "expense" ? C.night : "#fff", color: catFlow === "expense" ? C.gold : C.inkSoft, fontWeight: 700, fontSize: 12, padding: "8px 14px", borderRadius: 8, cursor: "pointer" } }, "هزینه ماه")
+        )
+      ),
+      catRows.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft, textAlign: "center", padding: "20px 0" } }, "تراکنشی برای این ماه ثبت نشده.") : h(React.Fragment, null,
+        h(DonutChart, { data: catRows, size: 230 }),
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "center", marginTop: 14 } },
+          catRows.map((r) => h("div", { key: r.label, style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 } },
+            h("span", { style: { width: 11, height: 11, borderRadius: 3, background: r.color, display: "inline-block" } }),
+            h("span", null, r.label)
+          ))
+        )
+      )
+    ) : null,
+
+    sub === "categories" && catRows.length > 0 ? h(Niche, null,
+      h(SectionTitle, { eyebrow: "خلاصه گزارش", title: (catFlow === "income" ? "درآمد" : "هزینه") + " به تفکیک دسته" }),
+      catRows.map((r) => {
+        const pct = catTotal > 0 ? (r.value / catTotal * 100) : 0;
+        return h("div", { key: r.label, style: { marginBottom: 14 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 6 } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+              h("span", { style: { width: 26, height: 26, borderRadius: "50%", background: r.color, display: "inline-block" } }),
+              h("span", { style: { fontSize: 12.5, fontWeight: 600 } }, r.label + " (" + pct.toFixed(1) + "%)")
+            ),
+            h("span", { style: { fontSize: 12.5, fontWeight: 700 } }, fmtN(r.value) + " ریال")
+          ),
+          h("div", { style: { background: C.sand, borderRadius: 999, height: 6, overflow: "hidden" } },
+            h("div", { style: { width: pct + "%", height: "100%", background: r.color, borderRadius: 999 } })
+          )
+        );
+      })
+    ) : null,
+
+    sub === "stats" ? h(React.Fragment, null,
+      h(Niche, { style: { marginBottom: 14 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 } },
+          h("div", null, h("div", { style: { fontSize: 11, color: C.inkSoft } }, "درآمد ماه"), h("div", { style: { fontSize: 15, fontWeight: 700, color: C.sage } }, fmtN(monthIncome) + " ریال")),
+          h("div", null, h("div", { style: { fontSize: 11, color: C.inkSoft } }, "هزینه ماه"), h("div", { style: { fontSize: 15, fontWeight: 700, color: C.pomegranate } }, fmtN(monthExpense) + " ریال")),
+          h("div", null, h("div", { style: { fontSize: 11, color: C.inkSoft } }, "مانده ماه"), h("div", { style: { fontSize: 15, fontWeight: 700, color: monthNet >= 0 ? C.clay : C.pomegranate } }, fmtN(monthNet) + " ریال"))
+        ),
+        h("div", { style: { marginTop: 16 } },
+          h(MiniChart, { data: trendData, keys: ["درآمد", "هزینه"], colors: [C.sage, "#E36F8B"], type: "bar", height: 170 })
+        )
+      ),
+      h(Niche, null,
+        h(SectionTitle, { eyebrow: "دفتر تراکنش‌ها", title: "لیست تراکنش‌های این ماه" }),
+        dayKeys.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "تراکنشی برای این ماه ثبت نشده.") : null,
+        dayKeys.map((dateISO) => {
+          const dayEntries = byDay[dateISO];
+          const dayNet = dayEntries.reduce((s, e) => s + (e.flow === "income" ? Number(e.amount || 0) : -Number(e.amount || 0)), 0);
+          const d = new Date(dateISO + "T00:00:00");
+          return h("div", { key: dateISO, style: { marginBottom: 14 } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + C.sandDark } },
+              h("div", { style: { fontSize: 12, color: C.inkSoft } }, weekdayName(d) + " - " + jalaliLabel(d)),
+              h("div", { style: { fontSize: 12.5, fontWeight: 700, color: dayNet >= 0 ? C.sage : C.pomegranate } }, (dayNet >= 0 ? "+" : "") + fmtN(dayNet) + " ریال")
+            ),
+            dayEntries.map((e) => h("div", { key: e.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", background: C.sand, borderRadius: 10, padding: "8px 12px", marginBottom: 6, gap: 8, flexWrap: "wrap" } },
+              h("div", null,
+                h("div", { style: { fontWeight: 700, fontSize: 12.5 } }, (e.flow === "income" ? "درآمد" : "هزینه‌ها") + " - " + e.category),
+                h("div", { style: { fontSize: 10.5, color: C.inkSoft } }, "حساب: " + (e.account || "-") + (e.note ? " — " + e.note : ""))
+              ),
+              h("b", { style: { fontSize: 13, color: e.flow === "income" ? C.sage : C.pomegranate } }, (e.flow === "income" ? "+" : "−") + fmtN(e.amount) + " ریال")
+            ))
+          );
+        })
+      )
+    ) : null,
+
+    sub === "sources" ? h(Niche, null,
+      h(SectionTitle, { eyebrow: "منابع", title: "درآمد و هزینهٔ این ماه به تفکیک حساب" }),
+      accounts.length === 0 ? h("div", { style: { fontSize: 12, color: C.inkSoft } }, "حسابی تعریف نشده.") : null,
+      accounts.map((a) => {
+        const s = sourceMap[a] || { income: 0, expense: 0 };
+        const net = s.income - s.expense;
+        return h("div", { key: a, style: { background: C.sand, borderRadius: 10, padding: "10px 12px", marginBottom: 8 } },
+          h("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 6 } }, a),
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 } }, h("span", null, "درآمد"), h("b", { style: { color: C.sage } }, fmtN(s.income))),
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 } }, h("span", null, "هزینه"), h("b", { style: { color: C.pomegranate } }, fmtN(s.expense))),
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 700, marginTop: 4, paddingTop: 4, borderTop: "1px solid " + C.sandDark } }, h("span", null, "خالص این ماه"), h("span", { style: { color: net >= 0 ? C.clay : C.pomegranate } }, fmtN(net)))
+        );
+      })
     ) : null
   );
 }
